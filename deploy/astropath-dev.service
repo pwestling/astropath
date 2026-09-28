@@ -1,0 +1,21 @@
+[Unit]
+Description=Astropath Next.js development server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=astropath-dev
+Group=astropath-dev
+WorkingDirectory=/srv/astropath-dev
+BindPaths=/root/dev/astropath:/srv/astropath-dev
+Environment=PATH=/opt/deaddrop-node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/bin
+Environment=NEXT_TELEMETRY_DISABLED=1
+Environment=HOME=/var/lib/astropath-dev
+ExecStart=/opt/deaddrop-node/bin/npm run dev -- --webpack --hostname 127.0.0.1 --port 4312
+Restart=on-failure
+RestartSec=5
+MemoryMax=1500M
+
+[Install]
+WantedBy=multi-user.target

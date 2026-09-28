@@ -6,6 +6,9 @@ A private shared inbox for ChatGPT, Claude, Muse, and other tools. Notes, origin
 
 **[Deploy on a VPS with Cloudflare R2 →](docs/vps-deployment.md)** · **[Deploy on Vercel with Blob →](docs/deployment.md)**
 
+The RackNerd source checkout used for development is documented in
+[docs/racknerd-development.md](docs/racknerd-development.md).
+
 The guide covers a fresh account, custom domain and DNS, storage, environment variables, owner creation, verification, upgrades, and troubleshooting. No source-code edits are needed for a different owner or domain.
 
 ## Stack
