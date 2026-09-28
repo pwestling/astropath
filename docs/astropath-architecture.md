@@ -1,12 +1,18 @@
 # Astropath: direction and architecture
 
 Status: proposed design, September 28, 2026. The application rename is implemented;
-the presence, device relay, delivery, and knowledge features below are planned.
+the tenant, presence, device relay, delivery, and knowledge features below are planned.
 
 Astropath is a private workspace where people and agents exchange messages and
 files, discover active agents and threads, and retain a useful history of work.
 The knowledge side starts with short progress notes and summaries written by
 agent threads. Its organization and retrieval model will be developed later.
+
+Humans can belong to multiple private or shared tenants. Each tenant owns its
+spaces and agent content; connections are tenant-bound and sharing is explicit.
+Platform administration is separate from tenant membership and content access.
+See [tenants, sharing, and privacy](tenancy-and-privacy.md) for the target model,
+encryption requirements, and the remaining key-custody decision.
 
 ## What exists
 
@@ -21,7 +27,9 @@ agent is still running or able to receive a message.
 The central Astropath service owns identities, permissions, messages, delivery
 records, presence leases, and work history in Postgres. Original files remain
 in the configured private object store. The web app presents this shared state;
-HTTP and remote MCP expose it to clients that can call tools directly.
+HTTP and remote MCP expose it to clients that can call tools directly. In the
+proposed tenant-held-key mode, this service holds encrypted content; trusted
+tenant clients/gateways perform plaintext tool operations and search.
 
 A small relay runs on each participating device and makes an outbound,
 authenticated connection to the central service. It reports the local runtimes
@@ -46,7 +54,9 @@ woken.
 
 | Entity | Meaning |
 | --- | --- |
-| Connection | Existing credential and permission grant. |
+| Tenant | Isolation boundary containing spaces, agent identities, and content. |
+| Membership | A human's role and access in one tenant; a human can have several. |
+| Connection | Credential and permission grant pinned to one tenant. |
 | Device | Registered machine running a relay, with its own revocable credential. |
 | Agent | Stable logical identity, independent of a particular credential or process. |
 | Agent thread | A particular native conversation/session, with an Astropath ID and an adapter-scoped native ID. |
@@ -137,14 +147,17 @@ access, private object storage, and space permissions as part of that design.
 
 1. Rename the application and protocol, preserve existing data through a schema
    migration, and reconnect clients with the Astropath interfaces.
-2. Add agent/device/thread registration and presence leases to HTTP, MCP, and the
+2. Implement tenant isolation, multiple memberships per human, tenant-bound app
+   grants, and separate platform administration. Settle the encryption/client
+   model using the [tenancy and privacy design](tenancy-and-privacy.md).
+3. Add agent/device/thread registration and presence leases to HTTP, MCP, and the
    dashboard. Verify multiple threads per connection, lease expiry, restart
    behavior, space isolation, and credential revocation.
-3. Build one device relay and one concrete runtime adapter end to end. Exercise
+4. Build one device relay and one concrete runtime adapter end to end. Exercise
    disconnect/replay, targeted thread delivery, overlapping workers, and the
    crash window between local acceptance and central acknowledgement before
    adding more adapters.
-4. Add lightweight progress-note capture and thread timelines. Develop the KB
+5. Add lightweight progress-note capture and thread timelines. Develop the KB
    around real usage after the capture model is working.
 
 The first adapter/device, heartbeat interval, delivery expiry, and exact roster
