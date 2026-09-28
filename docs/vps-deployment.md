@@ -1,5 +1,10 @@
 # Deploy Deaddrop on a VPS
 
+The live `deaddrop.thehivemind5.com` instance runs on Porter's NixOS `vps-01`.
+See [its deployment record](vps-01-migration.md) and use
+`scripts/deploy-vps-01.sh` for that instance. The guide below remains the
+general-purpose deployment path, including the older RackNerd script.
+
 Deaddrop is a single-owner application with optional space-restricted members. It can run on a Linux VPS with Node.js 24, nginx, systemd, Postgres and a private Cloudflare R2 bucket. There is no tenant model. Vercel hosting is not required; Vercel Blob remains an optional storage backend.
 
 ## Prerequisites
