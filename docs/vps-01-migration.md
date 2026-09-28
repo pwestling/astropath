@@ -9,7 +9,7 @@ Better Auth secret, and owner identity were preserved.
 | --- | --- |
 | Runtime | `deaddrop.service` on `vps-01`, Node 24 on `127.0.0.1:4310` |
 | Public URL | `https://deaddrop.thehivemind5.com` through NixOS nginx |
-| Database | PostgreSQL 18.6 on `vps-01`, database and role `deaddrop`, local peer-authenticated Unix socket; Neon `neondb` is a retained, frozen rollback source |
+| Database | PostgreSQL 18.6 on `vps-01`, database and role `deaddrop`, local peer-authenticated Unix socket; Neon `neondb` retains the cutover state with known app writers stopped |
 | Files | Existing private R2 bucket `deaddrop`; signed direct uploads and downloads |
 | Jobs | Daily encrypted PostgreSQL backup timer; no app worker or other cron |
 | Legacy paths | RackNerd nginx temporarily proxies cached-DNS clients to the VPS; its app service is stopped and disabled. The Vercel deployment aliases were already paused before this move. |
@@ -35,6 +35,10 @@ Better Auth secret, and owner identity were preserved.
   root-owned mode-400 file in `/run/secrets`. The sole database URL change was
   to `postgresql:///deaddrop?host=/run/postgresql`; other credentials were
   preserved. Never commit or print decrypted values.
+- The ignored `.env.local` in this checkout also pointed at production Neon.
+  Its database URL now uses the VPS socket so local commands cannot silently
+  write to stale Neon data. That socket is only available on the VPS; Mac
+  development needs a separate development database connection.
 
 The Cloudflare `thehivemind5.com` zone A record
 `5892f030f766cf428f5e856271a0dc81` changed from `107.174.170.185` to
@@ -62,8 +66,9 @@ expires 2026-12-15.
   without source owners or ACLs, first into an isolated rehearsal database and
   then into the dedicated production database after stopping the VPS app writer.
   The old RackNerd service and Vercel aliases were already inactive. The final
-  dump is root-only at `/var/tmp/deaddrop-neon-final.dump` (301,963 bytes,
-  SHA-256 `627ce2e22b59b73b138c72c8ac9a1fe40f5db1e72332369f2db7e8ded4d7866d`).
+  dump is root-only at `/var/lib/deaddrop-migration/neon-final-20260928.dump`
+  (301,963 bytes; SHA-256
+  `627ce2e22b59b73b138c72c8ac9a1fe40f5db1e72332369f2db7e8ded4d7866d`).
   Exact row counts and content hashes matched across all 22 tables; indexes,
   constraints, and both sequence values matched. The target reports `C.utf8`
   where Neon reported `C.UTF-8`. A rolled-back sequence-backed insert under
@@ -75,6 +80,9 @@ expires 2026-12-15.
   and active token revocation. After cleanup the local database still had 1
   space, 0 members, 44 drops, 10 ready files totaling 15,140,574 bytes, 5
   connections, and 7 sessions.
+- The retained Neon database still had the exact final-source table and
+  sequence fingerprints after the new local database passed its public smoke
+  test; no other source writer was observed during cutover.
 - Public checks returned 200 for health, login, OpenAPI, and OAuth metadata;
   the unauthenticated drops API returned 401. The login CSS asset returned 200.
   The site certificate validated, and Cloudflare plus independent recursive
@@ -131,8 +139,9 @@ migrations automatically.
 
 The old RackNerd release and root-only environment file remain in place, but
 its service is disabled. A root-only copy of its pre-cutover nginx config is at
-`/app/deaddrop/shared/nginx-before-vps-proxy.conf.bak`. Neon holds the frozen
-pre-cutover state; it does **not** receive writes made to local PostgreSQL.
+`/app/deaddrop/shared/nginx-before-vps-proxy.conf.bak`. Neon retains the
+pre-cutover state with known app writers stopped; it does **not** receive
+writes made to local PostgreSQL.
 The app made no schema change during this migration. After any new local write,
 do not point the app back at Neon or RackNerd without first stopping the VPS
 writer, protecting a fresh local dump, and reconciling or reverse-transferring
