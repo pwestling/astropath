@@ -49,17 +49,17 @@ Run schema migration and owner initialization explicitly before the first deploy
 
 ### Invited members
 
-In **Settings**, create a space, then invite a member by name and email and assign that space. Share the generated link privately. It expires after seven days, can be used once, and lets the member choose their own password. No email service is needed.
+In **Settings**, create a space, then invite a member by name and email and assign that space. Share the generated link privately. It expires after seven days and can be used once. New members choose a password; existing account holders sign in with the invited email address and accept. No email service is needed.
 
 Members can use and organize notes/files in their assigned spaces, create API tokens, authorize named OAuth connections, and revoke their own connections. They cannot manage members, create spaces, view other spaces, or manage someone else's connections. The owner retains access to every space; existing owner connections granted **All spaces** retain that access too.
 
 These permissions apply within the selected tenant. Use the tenant selector to
 create another private or shared tenant; its creator is its owner. API/OAuth
 connections stay pinned to the tenant selected when they were created. Existing
-accounts can create additional tenants, but accepting another tenant's invitation
-with an existing account is not enabled yet.
+accounts can create additional tenants and accept invitations to shared tenants.
+Acceptance opens the newly joined tenant and preserves access to existing tenants.
 
-A member's connections are limited both to the spaces granted when created and to the member's current access. Removing a space immediately blocks new requests to it; adding a different space does not expand an existing connection's grant. Authorize a new connection for the new space. Disabling a member signs them out and blocks their API/OAuth connections and token refresh. Previously issued signed file URLs keep their existing short expiry.
+A member's connections are limited both to the spaces granted when created and to the member's current access. Removing a space immediately blocks new requests to it; adding a different space does not expand an existing connection's grant. Authorize a new connection for the new space. Disabling a membership blocks access to that tenant, including existing connections and file transfer links. The account's sessions and access to other tenants remain available.
 
 The owner can update access, disable/re-enable a member, or generate a replacement link for a pending invitation in **Settings → Members**. A replacement link invalidates the old one. Members have no ability to invite other people.
 

@@ -173,7 +173,42 @@ export class MemberStore {
       "SELECT slug,name FROM ap_spaces WHERE slug=ANY($1::text[]) AND tenant_id=$2 ORDER BY name",
       [member.spaces, member.tenant_id],
     );
-    return { name: member.name, email: member.email, spaces: spaces.rows };
+    const destination = await this.database.query<{
+      tenant_name: string;
+      existing_account: boolean;
+    }>(
+      `SELECT name AS tenant_name, EXISTS(SELECT 1 FROM "user" WHERE lower(email)=$2) AS existing_account
+       FROM ap_tenants WHERE id=$1`,
+      [member.tenant_id, member.email],
+    );
+    return {
+      name: member.name,
+      email: member.email,
+      spaces: spaces.rows,
+      ...destination.rows[0],
+    };
+  }
+  async acceptExisting(token: string, userId: string) {
+    return this.database.transaction(async (tx) => {
+      const member = await this.pending(tx, token, true);
+      // The caller supplies a server-authenticated session ID. Read the current
+      // account email under a lock so an email change cannot race acceptance.
+      const user = await tx.query<{ email: string }>(
+        'SELECT email FROM "user" WHERE id=$1 FOR UPDATE',
+        [userId],
+      );
+      if (!user.rows[0] || user.rows[0].email.toLowerCase() !== member.email)
+        throw new AppError(
+          403,
+          "invitation_account_mismatch",
+          "Sign in with the email address this invitation was sent to.",
+        );
+      await tx.query(
+        "UPDATE ap_members SET user_id=$2,invite_hash=NULL,invite_expires_at=NULL WHERE id=$1",
+        [member.id, userId],
+      );
+      return { email: member.email, tenant_id: member.tenant_id };
+    });
   }
   async accept(token: string, password: string) {
     z.string().min(12).max(128).parse(password);
@@ -190,7 +225,7 @@ export class MemberStore {
         throw new AppError(
           409,
           "existing_account",
-          "This email already has an account. Joining another tenant with an existing account is not available yet.",
+          "This email already has an account. Sign in to accept the invitation.",
         );
       const userId = randomUUID();
       // Use Better Auth's password format and atomically create its credential account with membership.
@@ -208,7 +243,7 @@ export class MemberStore {
         "UPDATE ap_members SET user_id=$2,invite_hash=NULL,invite_expires_at=NULL WHERE id=$1",
         [member.id, userId],
       );
-      return { email: member.email };
+      return { email: member.email, tenant_id: member.tenant_id };
     });
   }
 }

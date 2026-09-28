@@ -4,13 +4,37 @@ import { PGlite } from "@electric-sql/pglite";
 import { verifyPassword } from "better-auth/crypto";
 import { beforeAll, afterAll, beforeEach, expect, it, vi } from "vitest";
 import type { QueryResultRow } from "pg";
-import type { Database } from "../src/lib/db";
+import { tenantDatabase, type Database, type Queryable } from "../src/lib/db";
 import type { Principal } from "../src/lib/policy";
 import { MemberStore } from "../src/lib/members";
 import { userPrincipal, connectionSpaces } from "../src/lib/access";
 import { MessageStore } from "../src/lib/store";
 import { IdentityStore } from "../src/lib/identities";
 import { migrateTenancy, INITIAL_TENANT } from "../src/lib/tenant-migration";
+import { createTenant } from "../src/lib/tenants";
+import { POST } from "../src/app/api/invitations/route";
+
+const state = vi.hoisted(() => ({
+  database: undefined as Database | undefined,
+  userId: null as string | null,
+}));
+vi.mock("../src/lib/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/lib/db")>()),
+  systemDb: {
+    query: (sql: string, values?: unknown[]) =>
+      state.database!.query(sql, values),
+    transaction: <T>(fn: (tx: Queryable) => Promise<T>) =>
+      state.database!.transaction(fn),
+  },
+}));
+vi.mock("../src/lib/auth", () => ({
+  getAuth: () => ({
+    api: {
+      getSession: async () =>
+        state.userId ? { user: { id: state.userId } } : null,
+    },
+  }),
+}));
 
 const engine = new PGlite();
 const query = async <T extends QueryResultRow>(
@@ -35,7 +59,10 @@ const database: Database = {
       }),
     ),
 };
-const members = new MemberStore(database);
+const members = new MemberStore({
+  ...database,
+  forTenant: (id) => tenantDatabase(id, database),
+});
 const messages = new MessageStore(database);
 const owner: Principal = {
   tenantId: INITIAL_TENANT,
@@ -66,6 +93,7 @@ async function inviteAndAccept() {
   return { invite, principal: (await userPrincipal(database, row.user_id))! };
 }
 beforeAll(async () => {
+  state.database = database;
   vi.stubEnv("OWNER_EMAIL", "owner@example.com");
   vi.stubEnv("APP_URL", "https://members.example.com");
   vi.stubEnv("ASTROPATH_MASTER_KEY", Buffer.alloc(32, 7).toString("base64"));
@@ -87,6 +115,7 @@ beforeAll(async () => {
   );
 });
 beforeEach(async () => {
+  state.userId = null;
   await engine.exec(
     'TRUNCATE ap_members,ap_connections,ap_messages,ap_files,ap_receipts,ap_activity,"user",account,session CASCADE',
   );
@@ -101,6 +130,108 @@ beforeEach(async () => {
 afterAll(async () => {
   vi.unstubAllEnvs();
   await engine.close();
+});
+
+async function inviteExisting() {
+  const { principal } = await inviteAndAccept();
+  const { tenant } = await createTenant(owner, { name: "Shared project" });
+  const tenantDb = await tenantDatabase(tenant.id, database);
+  await tenantDb.query(
+    "INSERT INTO ap_spaces(slug,name) VALUES('personal','Personal')",
+  );
+  const scoped = new MemberStore(tenantDb);
+  const invite = await scoped.create({ ...owner, tenantId: tenant.id }, input);
+  return {
+    principal,
+    tenant,
+    token: tokenOf(invite.invite_url),
+    memberId: invite.member.id,
+  };
+}
+
+it("joins another tenant with the same account and preserves credentials and original access", async () => {
+  const { principal, tenant, token } = await inviteExisting();
+  const accountsBefore = (await query("SELECT * FROM account")).rows;
+  const usersBefore = (await query('SELECT * FROM "user" ORDER BY id')).rows;
+  expect(await members.inspect(token)).toMatchObject({
+    existing_account: true,
+    tenant_name: "Shared project",
+  });
+  await expect(members.accept(token, password)).rejects.toMatchObject({
+    code: "existing_account",
+  });
+  await expect(members.acceptExisting(token, "owner")).rejects.toMatchObject({
+    code: "invitation_account_mismatch",
+  });
+  expect(await members.acceptExisting(token, principal.userId!)).toEqual({
+    email: input.email,
+    tenant_id: tenant.id,
+  });
+  await expect(
+    members.acceptExisting(token, principal.userId!),
+  ).rejects.toMatchObject({ code: "invalid_invite" });
+  expect((await query("SELECT * FROM account")).rows).toEqual(accountsBefore);
+  expect((await query('SELECT * FROM "user" ORDER BY id')).rows).toEqual(
+    usersBefore,
+  );
+  for (const tenantId of [INITIAL_TENANT, tenant.id])
+    expect(
+      await userPrincipal(database, principal.userId!, tenantId),
+    ).toMatchObject({ tenantId, owner: false, spaces: ["personal"] });
+});
+
+it.each(["expired", "disabled member", "disabled tenant"])(
+  "rejects existing-account acceptance when invitation state is %s",
+  async (reason) => {
+    const { principal, tenant, token, memberId } = await inviteExisting();
+    if (reason === "expired")
+      await query(
+        "UPDATE ap_members SET invite_expires_at=now()-interval '1 second' WHERE id=$1",
+        [memberId],
+      );
+    else if (reason === "disabled member")
+      await query("UPDATE ap_members SET disabled_at=now() WHERE id=$1", [
+        memberId,
+      ]);
+    else
+      await query("UPDATE ap_tenants SET disabled_at=now() WHERE id=$1", [
+        tenant.id,
+      ]);
+    await expect(
+      members.acceptExisting(token, principal.userId!),
+    ).rejects.toMatchObject({ code: "invalid_invite" });
+    expect(
+      (await query("SELECT user_id FROM ap_members WHERE id=$1", [memberId]))
+        .rows[0].user_id,
+    ).toBeNull();
+  },
+);
+
+it("uses only the authenticated session for acceptance and requires a same-origin request", async () => {
+  const { principal, tenant, token } = await inviteExisting();
+  const request = (body: object, origin = "https://members.example.com") =>
+    POST(
+      new Request("https://members.example.com/api/invitations", {
+        method: "POST",
+        headers: {
+          Origin: origin,
+          "Content-Type": "application/json",
+          "X-Astropath-Tenant": INITIAL_TENANT,
+        },
+        body: JSON.stringify({ action: "accept_existing", token, ...body }),
+      }),
+    );
+  expect((await request({})).status).toBe(401);
+  state.userId = "owner";
+  expect((await request({ userId: principal.userId })).status).toBe(400);
+  expect((await request({})).status).toBe(403);
+  state.userId = principal.userId!;
+  expect((await request({}, "https://foreign.example.com")).status).toBe(403);
+  const accepted = await request({});
+  expect(accepted.status).toBe(200);
+  expect(accepted.headers.get("cache-control")).toBe("no-store");
+  expect(await accepted.json()).toMatchObject({ tenant_id: tenant.id });
+  expect((await request({})).status).toBe(400);
 });
 
 it("reserves invitation creation and member listing for the owner", async () => {

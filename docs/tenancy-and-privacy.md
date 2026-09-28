@@ -45,10 +45,11 @@ and owns its spaces, connections, messages, files, agent registrations, presence
 and work history. A personal tenant has one human member; a shared tenant has
 several. They use the same data model and permission checks.
 
-The current invitation flow enrolls new accounts. Existing accounts can create
-additional tenants; session-authenticated acceptance of invitations into other
-tenants is still pending. The database and authorization layer already support
-the same account having memberships in multiple tenants.
+Invitations enroll new accounts or add an existing account to another tenant.
+Existing account holders sign in normally; acceptance requires the authenticated
+account's current email to match the invitation. The server consumes the link
+once and adds only the invited membership, preserving the account's credentials
+and other memberships. The invitation page selects the newly joined tenant.
 
 For example, Porter can own **Porter Private** and belong to **Shared Project**.
 Another Shared Project member has no access to Porter Private, its roster, or
