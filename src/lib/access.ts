@@ -6,31 +6,38 @@ import type { Principal } from "./policy";
 export async function userPrincipal(
   database: Queryable,
   userId: string,
+  tenantId?: string,
 ): Promise<Principal | null> {
-  const result = await database.query<{
-    id: string;
-    name: string;
-    email: string;
-    member_id: string | null;
-    spaces: string[] | null;
-    disabled_at: Date | null;
-  }>(
-    `SELECT u.id,u.name,u.email,m.id AS member_id,m.spaces,m.disabled_at
-      FROM "user" u LEFT JOIN ap_members m ON m.user_id=u.id WHERE u.id=$1`,
-    [userId],
-  );
-  const user = result.rows[0];
+  const user = (
+    await database.query<{ id: string; name: string; email: string }>(
+      'SELECT id,name,email FROM "user" WHERE id=$1',
+      [userId],
+    )
+  ).rows[0];
   if (!user) return null;
-  const owner = !!ownerEmail() && user.email.toLowerCase() === ownerEmail();
-  if (!owner && (!user.member_id || user.disabled_at || !user.spaces?.length))
-    return null;
+  const platformAdmin =
+    !!ownerEmail() && user.email.toLowerCase() === ownerEmail();
+  const member = (
+    await database.query<{ tenant_id: string; role: string; spaces: string[] }>(
+      `SELECT m.tenant_id,m.role,m.spaces FROM ap_members m JOIN ap_tenants t ON t.id=m.tenant_id
+     WHERE m.user_id=$1 AND m.disabled_at IS NULL AND t.disabled_at IS NULL
+     AND ($2::uuid IS NULL OR m.tenant_id=$2) ORDER BY t.created_at,t.id LIMIT 1`,
+      [userId, tenantId ?? null],
+    )
+  ).rows[0];
+  if (!member && tenantId) return null;
+  const owner = member?.role === "owner";
   return {
-    id: `${owner ? "owner" : "member"}:${user.id}`,
+    // Preserve historical receipt/uploader identities. The prefix conveys no
+    // permission: tenant membership and the separate owner flag decide access.
+    id: `${platformAdmin ? "owner" : "member"}:${user.id}`,
     userId: user.id,
     name: user.name,
     owner,
+    platformAdmin,
+    tenantId: member?.tenant_id,
     scopes: [...SCOPES],
-    spaces: owner ? null : user.spaces,
+    spaces: owner ? null : (member?.spaces ?? []),
   };
 }
 
@@ -38,10 +45,11 @@ export async function connectionSpaces(
   database: Queryable,
   spaces: string[] | null,
   userId: string | null,
+  tenantId: string,
 ) {
-  // Credentials created before member accounts were all issued by the owner.
-  if (!userId) return spaces;
-  const account = await userPrincipal(database, userId);
+  const account = userId
+    ? await userPrincipal(database, userId, tenantId)
+    : null;
   if (!account)
     throw new AppError(
       403,
@@ -49,7 +57,6 @@ export async function connectionSpaces(
       "The account that authorized this connection no longer has access.",
     );
   if (account.owner) return spaces;
-  // A member connection can never acquire unrestricted access, including after a membership edit.
   const allowed =
     spaces?.filter((space) => account.spaces!.includes(space)) || [];
   if (!allowed.length)

@@ -8,6 +8,7 @@ import {
 import { deleteFile } from "../src/lib/storage";
 import { pool } from "../src/lib/db";
 import { mintToken } from "../src/lib/policy";
+import { INITIAL_TENANT } from "../src/lib/tenant-migration";
 
 const base = process.env.SMOKE_URL || "http://localhost:3000";
 const space = `smoke-${randomUUID().slice(0, 8)}`;
@@ -42,20 +43,32 @@ async function api(
 }
 
 async function main() {
-  await pool.query("INSERT INTO ap_spaces(slug,name) VALUES($1,$2)", [
-    space,
-    "Smoke verification",
-  ]);
+  const tenantId = process.env.SMOKE_TENANT_ID || INITIAL_TENANT;
+  const owner = (
+    await pool.query<{ user_id: string }>(
+      "SELECT user_id FROM ap_members WHERE tenant_id=$1 AND role='owner' AND disabled_at IS NULL AND user_id IS NOT NULL LIMIT 1",
+      [tenantId],
+    )
+  ).rows[0];
+  assert.ok(owner, "The smoke tenant needs an active human owner");
+  await pool.query(
+    "INSERT INTO ap_spaces(slug,name,tenant_id) VALUES($1,$2,$3)",
+    [space, "Smoke verification", tenantId],
+  );
   for (let index = 0; index < principals.length; index++) {
     await pool.query(
-      "INSERT INTO ap_connections(id,name,kind,token_hash,token_prefix,scopes,spaces) VALUES($1,$2,'token',$3,$4,$5,$6)",
+      "INSERT INTO ap_connections(id,name,kind,token_hash,token_prefix,scopes,spaces,tenant_id,created_by_user_id) VALUES($1,$2,'token',$3,$4,$5,$6,$7,$8)",
       [
         principals[index],
         `Smoke ${index}`,
         tokens[index].tokenHash,
         tokens[index].prefix,
-        index === 1 ? ["astropath:read"] : ["astropath:read", "astropath:write"],
+        index === 1
+          ? ["astropath:read"]
+          : ["astropath:read", "astropath:write"],
         index === 2 ? ["general"] : [space],
+        tenantId,
+        owner.user_id,
       ],
     );
   }
@@ -197,7 +210,17 @@ async function main() {
     }),
   );
   const tools = await client.listTools();
-  assert.equal(tools.tools.length, 15);
+  for (const name of [
+    "list_skills",
+    "publish_skill",
+    "pull_skill",
+    "list_skill_revisions",
+    "deprecate_skill",
+  ])
+    assert.ok(
+      tools.tools.some((tool) => tool.name === name),
+      `Missing MCP tool ${name}`,
+    );
   const found = await client.callTool({
     name: "list_messages",
     arguments: { space },
@@ -294,7 +317,10 @@ async function main() {
     received.messages.map((m: { id: string }) => m.id),
     [sent.message.id],
   );
-  const page = await tool("read_thread", { message_id: sent.message.id, limit: 2 });
+  const page = await tool("read_thread", {
+    message_id: sent.message.id,
+    limit: 2,
+  });
   assert.equal(page.messages.length, 2);
   assert.equal(
     (
@@ -332,7 +358,8 @@ async function main() {
     2,
   );
   assert.equal(
-    (await api(`messages/${conversation.message.id}/thread`, 1)).messages.length,
+    (await api(`messages/${conversation.message.id}/thread`, 1)).messages
+      .length,
     4,
   );
   await api(

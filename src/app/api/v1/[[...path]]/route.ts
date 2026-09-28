@@ -7,7 +7,7 @@ import {
   completeUpload,
   downloadLink,
   uploadInline,
-} from "@/lib/files";
+} from "@/lib/file-transfers";
 import {
   createConnection,
   revokeConnection,
@@ -20,6 +20,15 @@ import { fileInput } from "@/lib/validation";
 import { MemberStore } from "@/lib/members";
 import { db } from "@/lib/db";
 import { chat } from "@/lib/chat";
+import { skills } from "@/lib/skills";
+import {
+  listTenants,
+  createTenant,
+  platformTenants,
+  setTenantDisabled,
+  assertTenantMember,
+} from "@/lib/tenants";
+import { requireAccount } from "@/lib/policy";
 
 const members = new MemberStore(db);
 
@@ -41,6 +50,75 @@ async function handle(
     let result: unknown;
     let status = 200;
     if (route === "me" && method === "GET") result = { identity: principal };
+    else if (route === "tenants" && method === "GET")
+      result = await listTenants(principal);
+    else if (route === "tenants" && method === "POST") {
+      result = await createTenant(principal, await jsonBody(request));
+      status = 201;
+    } else if (route === "tenants/select" && method === "POST") {
+      const { tenant_id } = z
+        .object({ tenant_id: z.uuid() })
+        .strict()
+        .parse(await jsonBody(request));
+      await assertTenantMember(requireAccount(principal), tenant_id);
+      return Response.json(
+        { tenant_id },
+        {
+          headers: {
+            "Cache-Control": "no-store",
+            "Set-Cookie": `astropath_tenant=${tenant_id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${url.protocol === "https:" ? "; Secure" : ""}`,
+          },
+        },
+      );
+    } else if (route === "admin/tenants" && method === "GET")
+      result = await platformTenants(principal);
+    else if (
+      path[0] === "admin" &&
+      path[1] === "tenants" &&
+      path.length === 3 &&
+      method === "PATCH"
+    )
+      result = await setTenantDisabled(
+        principal,
+        path[2],
+        await jsonBody(request),
+      );
+    else if (route === "skills" && method === "GET")
+      result = await skills.list(principal, {
+        space: url.searchParams.get("space") ?? undefined,
+        include_deprecated:
+          url.searchParams.get("include_deprecated") === "true",
+        after: url.searchParams.get("after") ?? undefined,
+        limit: Number(url.searchParams.get("limit") ?? 30),
+      });
+    else if (route === "skills" && method === "POST") {
+      result = await skills.publish(principal, await jsonBody(request));
+      status = 201;
+    } else if (path[0] === "skills" && path.length === 2 && method === "GET")
+      result = await skills.pull(principal, {
+        slug: path[1],
+        space: url.searchParams.get("space") ?? "general",
+        revision_id: url.searchParams.get("revision_id") ?? undefined,
+      });
+    else if (path[0] === "skills" && path.length === 2 && method === "PATCH") {
+      const input = z
+        .record(z.string(), z.unknown())
+        .parse(await jsonBody(request));
+      result = await skills.deprecate(principal, { ...input, slug: path[1] });
+    } else if (
+      path[0] === "skills" &&
+      path.length === 3 &&
+      path[2] === "revisions" &&
+      method === "GET"
+    )
+      result = await skills.history(principal, {
+        slug: path[1],
+        space: url.searchParams.get("space") ?? "general",
+        before: url.searchParams.has("before")
+          ? Number(url.searchParams.get("before"))
+          : undefined,
+        limit: Number(url.searchParams.get("limit") ?? 30),
+      });
     else if (route === "messages/wait" && method === "POST") {
       result = await chat.waitMessages(principal, await jsonBody(request), {
         authenticate: () => apiPrincipal(request, { touch: false }),

@@ -36,7 +36,7 @@ export function errorResponse(error: unknown): Response {
     );
   console.error(
     "Astropath request failed",
-    error instanceof Error ? error.message : "Unknown error",
+    error instanceof Error ? error.name : "Unknown error",
   );
   return Response.json(
     {

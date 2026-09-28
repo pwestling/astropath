@@ -10,6 +10,7 @@ import { MemberStore } from "../src/lib/members";
 import { userPrincipal, connectionSpaces } from "../src/lib/access";
 import { MessageStore } from "../src/lib/store";
 import { IdentityStore } from "../src/lib/identities";
+import { migrateTenancy, INITIAL_TENANT } from "../src/lib/tenant-migration";
 
 const engine = new PGlite();
 const query = async <T extends QueryResultRow>(
@@ -27,6 +28,8 @@ const database: Database = {
         ) => {
           if (sql.startsWith("SELECT pg_advisory_xact_lock"))
             return { rows: [] };
+          if (!values)
+            return { rows: ((await tx.exec(sql)).at(-1)?.rows as T[]) || [] };
           return { rows: (await tx.query<T>(sql, values)).rows };
         },
       }),
@@ -35,6 +38,7 @@ const database: Database = {
 const members = new MemberStore(database);
 const messages = new MessageStore(database);
 const owner: Principal = {
+  tenantId: INITIAL_TENANT,
   id: "owner:owner",
   userId: "owner",
   name: "Owner",
@@ -64,6 +68,7 @@ async function inviteAndAccept() {
 beforeAll(async () => {
   vi.stubEnv("OWNER_EMAIL", "owner@example.com");
   vi.stubEnv("APP_URL", "https://members.example.com");
+  vi.stubEnv("ASTROPATH_MASTER_KEY", Buffer.alloc(32, 7).toString("base64"));
   await engine.exec(`CREATE TABLE "user"(id text PRIMARY KEY,name text,email text UNIQUE,"emailVerified" boolean,"createdAt" timestamptz,"updatedAt" timestamptz);
     CREATE TABLE account(id text PRIMARY KEY,"accountId" text,"providerId" text,"userId" text,password text,"createdAt" timestamptz,"updatedAt" timestamptz);
     CREATE TABLE session(id text PRIMARY KEY,"userId" text);`);
@@ -73,6 +78,10 @@ beforeAll(async () => {
   );
   await engine.exec(schema);
   await engine.exec(schema);
+  await database.transaction(migrateTenancy);
+  await query("SELECT set_config('astropath.tenant_id',$1,false)", [
+    INITIAL_TENANT,
+  ]);
   await query(
     "INSERT INTO ap_spaces(slug,name) VALUES('personal','Personal'),('other','Other')",
   );
@@ -83,6 +92,10 @@ beforeEach(async () => {
   );
   await query(
     "INSERT INTO \"user\"(id,name,email) VALUES('owner','Owner','owner@example.com')",
+  );
+  await query(
+    "INSERT INTO ap_members(id,email,name,user_id,spaces,role) VALUES($1,'owner@example.com','Owner','owner',ARRAY['general'],'owner')",
+    [randomUUID()],
   );
 });
 afterAll(async () => {
@@ -172,7 +185,9 @@ it("limits members to assigned data, defaults, and organization controls", async
   expect(
     (await messages.list(principal, {})).messages.map((message) => message.id),
   ).toEqual([own.message.id]);
-  await expect(messages.detail(principal, hidden.message.id)).rejects.toMatchObject({
+  await expect(
+    messages.detail(principal, hidden.message.id),
+  ).rejects.toMatchObject({
     status: 404,
   });
   await expect(
@@ -192,25 +207,34 @@ it("limits members to assigned data, defaults, and organization controls", async
 it("intersects app grants with current membership and disables sessions and connections", async () => {
   const { principal, invite } = await inviteAndAccept();
   expect(
-    await connectionSpaces(database, ["personal", "other"], principal.userId!),
+    await connectionSpaces(
+      database,
+      ["personal", "other"],
+      principal.userId!,
+      INITIAL_TENANT,
+    ),
   ).toEqual(["personal"]);
   await expect(
-    connectionSpaces(database, null, principal.userId!),
+    connectionSpaces(database, null, principal.userId!, INITIAL_TENANT),
   ).rejects.toMatchObject({ status: 403 });
   await members.update(owner, String(invite.member.id), { spaces: ["other"] });
   await expect(
-    connectionSpaces(database, ["personal"], principal.userId!),
+    connectionSpaces(database, ["personal"], principal.userId!, INITIAL_TENANT),
   ).rejects.toMatchObject({ status: 403 });
   await query("INSERT INTO session(id,\"userId\") VALUES('test',$1)", [
     principal.userId,
   ]);
   await members.update(owner, String(invite.member.id), { disabled: true });
-  expect(await userPrincipal(database, principal.userId!)).toBeNull();
-  expect((await query("SELECT * FROM session")).rows).toHaveLength(0);
+  expect(
+    await userPrincipal(database, principal.userId!, INITIAL_TENANT),
+  ).toBeNull();
+  expect((await query("SELECT * FROM session")).rows).toHaveLength(1);
   await expect(
-    connectionSpaces(database, ["other"], principal.userId!),
+    connectionSpaces(database, ["other"], principal.userId!, INITIAL_TENANT),
   ).rejects.toMatchObject({ status: 403 });
-  expect(await connectionSpaces(database, null, null)).toBeNull();
+  await expect(
+    connectionSpaces(database, null, null, INITIAL_TENANT),
+  ).rejects.toMatchObject({ status: 403 });
   expect((await userPrincipal(database, "owner"))?.owner).toBe(true);
 });
 
@@ -236,5 +260,5 @@ it("stores the member's space grant and creator on OAuth identities", async () =
   await query(
     "INSERT INTO \"user\"(id,name,email) VALUES('uninvited','Unknown','unknown@example.com')",
   );
-  expect(await userPrincipal(database, "uninvited")).toBeNull();
+  expect(await userPrincipal(database, "uninvited", INITIAL_TENANT)).toBeNull();
 });

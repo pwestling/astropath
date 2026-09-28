@@ -1,10 +1,10 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { db } from "../src/lib/db";
+import { systemDb as db } from "../src/lib/db";
 import { userPrincipal, connectionSpaces } from "../src/lib/access";
 import { CONNECTION_CLAIM } from "../src/lib/identities";
 import { oauthPrincipal } from "../src/lib/security";
 
-vi.mock("../src/lib/db", () => ({ db: { query: vi.fn() } }));
+vi.mock("../src/lib/db", () => ({ systemDb: { query: vi.fn() } }));
 vi.mock("../src/lib/auth", () => ({ getAuth: vi.fn() }));
 vi.mock("../src/lib/access", () => ({
   userPrincipal: vi.fn(),
@@ -42,7 +42,13 @@ it("rechecks token expiry while waiting even after the JWT was initially verifie
 it("honors current named-connection scopes and space membership without writing every poll", async () => {
   vi.mocked(db.query).mockResolvedValue({
     rows: [
-      { id, name: "Claude Work", spaces: null, scopes: ["astropath:read"] },
+      {
+        id,
+        tenant_id: id,
+        name: "Claude Work",
+        spaces: null,
+        scopes: ["astropath:read"],
+      },
     ],
   });
   const current = await oauthPrincipal(claims, { touch: false });
@@ -52,7 +58,7 @@ it("honors current named-connection scopes and space membership without writing 
     spaces: ["general"],
   });
   expect(vi.mocked(db.query).mock.calls[0][0]).toMatch(/^SELECT/);
-  expect(connectionSpaces).toHaveBeenCalledWith(db, null, "owner");
+  expect(connectionSpaces).toHaveBeenCalledWith(db, null, "owner", id);
 });
 it("rejects an active wait after named connection revocation or account disabling", async () => {
   vi.mocked(db.query).mockResolvedValue({ rows: [] });

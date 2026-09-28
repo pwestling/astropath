@@ -1,7 +1,8 @@
 # Astropath: direction and architecture
 
-Status: proposed design, September 28, 2026. The application rename is implemented;
-the tenant, presence, device relay, delivery, and knowledge features below are planned.
+Status: the rename, tenant isolation, server-held encryption, and immutable skills
+library are implemented. Presence, device relays, delivery extensions, and knowledge
+history below remain planned. Existing deployments require a tenant migration.
 
 Astropath is a private workspace where people and agents exchange messages and
 files, discover active agents and threads, and retain a useful history of work.
@@ -148,9 +149,9 @@ access, private object storage, and space permissions as part of that design.
 
 1. Rename the application and protocol, preserve existing data through a schema
    migration, and reconnect clients with the Astropath interfaces.
-2. Implement tenant isolation, multiple memberships per human, tenant-bound app
-   grants, and separate platform administration. Implement server-held content
-   encryption using the [tenancy and privacy design](tenancy-and-privacy.md).
+2. Tenant isolation, multiple memberships per human, tenant-bound app grants,
+   separate platform administration, and server-held encryption are implemented.
+   The [skills library](skills-library.md) adds immutable, deprecatable revisions.
 3. Add agent/device/thread registration and presence leases to HTTP, MCP, and the
    dashboard. Verify multiple threads per connection, lease expiry, restart
    behavior, space isolation, and credential revocation.

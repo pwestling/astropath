@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { db } from "@/lib/db";
+import { systemDb as db } from "@/lib/db";
 import { MemberStore } from "@/lib/members";
 import { checkOrigin, rateLimit, hash } from "@/lib/security";
 import { errorResponse, jsonBody } from "@/lib/errors";

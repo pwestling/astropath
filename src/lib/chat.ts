@@ -1,10 +1,10 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
-import { db, type Database } from "./db";
+import { db, forPrincipal, type Database } from "./db";
 import { AppError } from "./errors";
 import { EventStore, eventId } from "./events";
 import { requireScope, type Principal } from "./policy";
-import { MessageStore, type Message } from "./store";
+import { MessageStore, decodeMessage, decodeFile, type Message } from "./store";
 import { messageInput, spaceSlug } from "./validation";
 
 const waitOptions = {
@@ -60,6 +60,7 @@ type ChatMessage = Pick<
   | "body"
   | "created_at"
 > & {
+  encrypted_content?: string;
   body_truncated: boolean;
   attachments: {
     id: string;
@@ -71,10 +72,10 @@ type ChatMessage = Pick<
 };
 // Bound tool results even when messages have large bodies. Full content remains in read_message.
 const messageColumns = `d.id,d.thread_id,d.parent_id,d.space,d.sender,d.principal_id,d.recipient,d.title,
-  left(d.body,8000) AS body,(length(d.body)>8000) AS body_truncated,
+  d.body,d.encrypted_content,false AS body_truncated,
   to_char(d.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at,
   e.id::text AS event_id,
-  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',f.id,'name',f.name,'content_type',f.content_type,'size',f.size::text) ORDER BY f.created_at,f.id)
+  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',f.id,'encrypted_metadata',f.encrypted_metadata,'name',f.name,'content_type',f.content_type,'size',f.size::text) ORDER BY f.created_at,f.id)
     FROM ap_files f WHERE f.message_id=d.id),'[]'::jsonb) AS attachments`;
 
 export interface ChatContext {
@@ -111,9 +112,10 @@ export class ChatStore {
   }
 
   async thread(principal: Principal, raw: unknown) {
+    const database = await forPrincipal(this.database, principal);
     const input = threadInput.parse(raw);
     const anchor = await this.messages.get(principal, input.message_id);
-    const latest = await this.events.latest();
+    const latest = await this.events.latest(principal);
     let page: z.infer<typeof threadPage> | undefined;
     if (input.page) {
       try {
@@ -135,7 +137,7 @@ export class ChatStore {
     }
     const head = page?.head ?? latest;
     const rows = (
-      await this.database.query<ChatMessage>(
+      await database.query<ChatMessage>(
         `SELECT ${messageColumns} FROM ap_messages d
        LEFT JOIN ap_events e ON e.message_id=d.id AND e.type='message.created'
        WHERE d.thread_id=$1 AND d.space=$2 AND (e.id IS NULL OR e.id<=$3::bigint)
@@ -154,7 +156,17 @@ export class ChatStore {
         ],
       )
     ).rows;
-    const messages = rows.slice(0, input.limit);
+    const messages = rows.slice(0, input.limit).map((row) => {
+      const decoded = decodeMessage(database, row);
+      return {
+        ...decoded,
+        body: decoded.body.slice(0, 8000),
+        body_truncated: decoded.body.length > 8000,
+        attachments: decoded.attachments.map((file) =>
+          decodeFile(database, file),
+        ),
+      };
+    });
     const last = messages.at(-1);
     return {
       thread_id: anchor.thread_id,
@@ -189,6 +201,7 @@ export class ChatStore {
     input: z.infer<typeof waitMessagesInput> | z.infer<typeof waitReplyInput>,
     context: ChatContext,
   ) {
+    const database = await forPrincipal(this.database, principal);
     const deadline = Date.now() + input.timeout_seconds * 1000;
     context.signal.throwIfAborted();
     requireScope(principal, "astropath:read");
@@ -201,7 +214,7 @@ export class ChatStore {
         ? { space: anchor!.space }
         : { space: input.space, recipient: input.recipient };
     await this.events.validate(principal, filter);
-    const head = await this.events.latest();
+    const head = await this.events.latest(principal);
     if (input.after && BigInt(input.after) > BigInt(head))
       throw new AppError(
         400,
@@ -211,7 +224,7 @@ export class ChatStore {
     let cursor = input.after ?? head;
     if (anchor) {
       const event = (
-        await this.database.query<{ id: string }>(
+        await database.query<{ id: string }>(
           "SELECT id::text FROM ap_events WHERE message_id=$1 AND type='message.created' ORDER BY id LIMIT 1",
           [anchor.id],
         )
@@ -227,16 +240,19 @@ export class ChatStore {
       // Current credentials and space access are checked even when the inbox is quiet.
       const current = await context.authenticate();
       context.signal.throwIfAborted();
-      if (current.id !== principal.id)
+      if (
+        current.id !== principal.id ||
+        current.tenantId !== principal.tenantId
+      )
         throw new AppError(
           403,
           "identity_changed",
           "Connection identity changed.",
         );
       await this.events.validate(current, filter);
-      const highWater = await this.events.latest();
+      const highWater = await this.events.latest(principal);
       const rows = (
-        await this.database.query<ChatMessage>(
+        await database.query<ChatMessage>(
           `SELECT ${messageColumns} FROM ap_events e JOIN ap_messages d ON d.id=e.message_id
          WHERE e.type='message.created' AND e.id>$1::bigint AND e.id<=$2::bigint
          AND ($3::text[] IS NULL OR d.space=ANY($3))
@@ -258,7 +274,17 @@ export class ChatStore {
         )
       ).rows;
       context.signal.throwIfAborted();
-      const messages = rows.slice(0, input.limit);
+      const messages = rows.slice(0, input.limit).map((row) => {
+        const decoded = decodeMessage(database, row);
+        return {
+          ...decoded,
+          body: decoded.body.slice(0, 8000),
+          body_truncated: decoded.body.length > 8000,
+          attachments: decoded.attachments.map((file) =>
+            decodeFile(database, file),
+          ),
+        };
+      });
       const more = rows.length > input.limit;
       cursor = more ? messages[messages.length - 1].event_id! : highWater;
       if (messages.length || Date.now() >= deadline)

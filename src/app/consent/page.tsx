@@ -12,17 +12,20 @@ export default function Consent() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [access, setAccess] = useState<string[] | null>(null);
+  const [tenants, setTenants] = useState<{ id: string; name: string }[]>([]);
+  const [tenantId, setTenantId] = useState("");
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
     const id = query.get("client_id") || "";
     setClientId(id);
     setScopes((query.get("scope") || "").split(" "));
-    void fetch("/api/v1/spaces")
+    void fetch("/api/v1/tenants")
       .then(async (response) => {
         if (!response.ok)
           throw new Error("Sign in with an account that has workspace access.");
         const result = await response.json();
-        setAccess(result.spaces.map((space: { name: string }) => space.name));
+        setTenants(result.tenants);
+        setTenantId(result.active_tenant_id || result.tenants[0]?.id || "");
       })
       .catch((error) => setError(error.message));
     authClient.oauth2
@@ -35,13 +38,37 @@ export default function Consent() {
           );
       });
   }, []);
+  useEffect(() => {
+    if (!tenantId) return;
+    let cancelled = false;
+    setAccess(null);
+    void fetch("/api/v1/spaces", {
+      headers: { "X-Astropath-Tenant": tenantId },
+    })
+      .then(async (response) => {
+        if (!response.ok)
+          throw new Error("Unable to read this tenant's spaces.");
+        const result = await response.json();
+        if (!cancelled)
+          setAccess(result.spaces.map((space: { name: string }) => space.name));
+      })
+      .catch((error) => {
+        if (!cancelled) setError(error.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId]);
   async function decide(accept: boolean) {
     setBusy(true);
     setError("");
     try {
       const response = await fetch("/api/auth/oauth2/consent", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Astropath-Tenant": tenantId,
+        },
         body: JSON.stringify({
           accept,
           identity_name: identityName.trim(),
@@ -85,6 +112,21 @@ export default function Consent() {
             void decide(true);
           }}
         >
+          <label>
+            Tenant
+            <select
+              value={tenantId}
+              onChange={(event) => setTenantId(event.target.value)}
+              disabled={busy}
+              required
+            >
+              {tenants.map((tenant) => (
+                <option key={tenant.id} value={tenant.id}>
+                  {tenant.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <label>
             Identity name
             <input
@@ -147,7 +189,9 @@ export default function Consent() {
             className="button primary"
             type="submit"
             form="connection-approval"
-            disabled={busy || !clientId || !identityName.trim()}
+            disabled={
+              busy || !clientId || !identityName.trim() || !tenantId || !access
+            }
           >
             Allow connection <ArrowRight size={16} />
           </button>

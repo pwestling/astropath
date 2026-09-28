@@ -2,6 +2,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { AppError } from "./errors";
 
 export interface Principal {
+  tenantId?: string;
+  platformAdmin?: boolean;
   id: string;
   name: string;
   owner: boolean;

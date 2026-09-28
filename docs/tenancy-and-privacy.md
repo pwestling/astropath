@@ -1,10 +1,10 @@
 # Tenants, sharing, and privacy
 
-Status: proposed design, September 28, 2026. The running application still uses
-one workspace per installation. Tenant isolation and application-level content
-encryption are not implemented. The chosen initial direction is server-held
-keys, with protection against accidental access. Tenant-held keys remain an
-exploratory option, not an implementation requirement.
+Status: tenant isolation, server-held encryption, and immutable/deprecatable skill
+revisions are implemented in source and tested against isolated databases. Live
+installations require the [migration procedure](tenant-migration.md). Presence,
+relays, knowledge history, and tenant-held keys remain future work. The server-held
+model protects against accidental access; the operator controls the server and keys.
 
 ## Chosen privacy model: server-held keys
 
@@ -29,10 +29,14 @@ exports out of routine operational views.
 
 Account for every plaintext derivative: titles, filenames, activity details,
 notification payloads, search indexes, embeddings, and temporary upload files.
-The current SQL full-text index and direct file-transfer path need explicit
-changes before claiming a database or object-store dump hides content. Search
-can remain server-operated, but any retained plaintext index must be separately
-protected or documented as a limitation of the initial storage guarantee.
+The implementation removes the SQL full-text index and searches authorized,
+decrypted message batches in memory. This uses case-insensitive substring matching
+and scales less efficiently than an index. File transfers pass through Astropath;
+new object writes contain ciphertext at opaque paths. Message title/body/tags,
+file name/type, activity details, event payloads and skill content are encrypted.
+Tenant/space/skill names, sender and recipient labels, membership/account metadata,
+IDs, timestamps, file sizes and revision hashes remain visible operational metadata.
+Old object copies and pre-upgrade backups still need protection and explicit cleanup.
 
 ## Membership model
 
@@ -40,6 +44,11 @@ A human account can belong to several tenants. A tenant is the isolation boundar
 and owns its spaces, connections, messages, files, agent registrations, presence,
 and work history. A personal tenant has one human member; a shared tenant has
 several. They use the same data model and permission checks.
+
+The current invitation flow enrolls new accounts. Existing accounts can create
+additional tenants; session-authenticated acceptance of invitations into other
+tenants is still pending. The database and authorization layer already support
+the same account having memberships in multiple tenants.
 
 For example, Porter can own **Porter Private** and belong to **Shared Project**.
 Another Shared Project member has no access to Porter Private, its roster, or

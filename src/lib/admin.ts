@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { db } from "./db";
+import { db as rootDb, forPrincipal } from "./db";
 import { AppError } from "./errors";
 import { mintToken, requireScope, type Principal } from "./security";
 import { connectionInput, spaceSlug } from "./validation";
@@ -17,6 +17,7 @@ export function requireOwner(principal: Principal) {
     );
 }
 export async function overview(principal: Principal) {
+  const db = await forPrincipal(rootDb, principal);
   const userId = requireAccount(principal);
   const [counts, connections, activity] = await Promise.all([
     db.query(
@@ -40,11 +41,21 @@ export async function overview(principal: Principal) {
   return {
     ...counts.rows[0],
     connections: connections.connections,
-    activity: activity.rows,
+    activity: activity.rows.map(({ encrypted_detail, ...row }) => ({
+      ...row,
+      detail:
+        encrypted_detail && db.cipher
+          ? db.cipher.decrypt<string>(
+              `activity:${row.id}`,
+              String(encrypted_detail),
+            )
+          : row.detail,
+    })),
   };
 }
 
 export async function listConnections(principal: Principal) {
+  const db = await forPrincipal(rootDb, principal);
   const userId = requireAccount(principal);
   const result = await db.query(
     `SELECT id,name,kind,token_prefix,scopes,spaces,created_at,last_used_at,expires_at,revoked_at FROM ap_connections
@@ -64,6 +75,7 @@ export async function listConnections(principal: Principal) {
 }
 
 export async function createConnection(principal: Principal, raw: unknown) {
+  const db = await forPrincipal(rootDb, principal);
   const userId = requireAccount(principal);
   const input = connectionInput.parse(raw);
   input.spaces ??= principal.spaces;
@@ -96,11 +108,12 @@ export async function createConnection(principal: Principal, raw: unknown) {
       ],
     );
   });
-  await store.activity(principal.name, "connected", id, input.name);
+  await store.activity(principal.name, "connected", id, input.name, db);
   return { id, name: input.name, token, expires_at: expiresAt.toISOString() };
 }
 
 export async function revokeConnection(principal: Principal, id: string) {
+  const db = await forPrincipal(rootDb, principal);
   const userId = requireAccount(principal);
   const result = await db.query<{ name: string }>(
     "UPDATE ap_connections SET revoked_at=now() WHERE id=$1 AND ($2::boolean OR created_by_user_id=$3) RETURNING name",
@@ -108,11 +121,12 @@ export async function revokeConnection(principal: Principal, id: string) {
   );
   if (!result.rows[0])
     throw new AppError(404, "not_found", "Connection not found.");
-  await store.activity(principal.name, "revoked", id, result.rows[0].name);
+  await store.activity(principal.name, "revoked", id, result.rows[0].name, db);
   return { revoked: true };
 }
 
 export async function listSpaces(principal: Principal) {
+  const db = await forPrincipal(rootDb, principal);
   requireScope(principal, "astropath:read");
   const result = await db.query(
     "SELECT * FROM ap_spaces WHERE $1::text[] IS NULL OR slug=ANY($1::text[]) ORDER BY name",
@@ -121,6 +135,7 @@ export async function listSpaces(principal: Principal) {
   return { spaces: result.rows };
 }
 export async function createSpace(principal: Principal, raw: unknown) {
+  const db = await forPrincipal(rootDb, principal);
   requireOwner(principal);
   const input = z
     .object({ slug: spaceSlug, name: z.string().trim().min(1).max(80) })

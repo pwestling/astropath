@@ -13,6 +13,7 @@ export default async function Home() {
       ownerName={principal.name}
       owner={principal.owner}
       baseUrl={appUrl()}
+      tenantId={principal.tenantId}
     />
   );
 }

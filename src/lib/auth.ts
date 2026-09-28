@@ -3,7 +3,7 @@ import { jwt } from "better-auth/plugins";
 import { mcp } from "@better-auth/mcp";
 import { cimd } from "@better-auth/cimd";
 import { fetchClientMetadataResource } from "@better-auth/cimd/node";
-import { pool, db } from "./db";
+import { pool, systemDb as db } from "./db";
 import { appUrl, SCOPES } from "./config";
 import { oauthIdentityOptions } from "./oauth-identities";
 import { userPrincipal } from "./access";

@@ -37,6 +37,7 @@ import { Brand } from "./brand";
 import { api, bytes, relative } from "./api";
 import { authClient } from "@/lib/auth-client";
 import { MemberSettings } from "./member-settings";
+import { TenantSwitcher, PlatformTenants } from "./tenant-switcher";
 import type { Message, Attachment } from "@/lib/store";
 
 type Section =
@@ -86,10 +87,12 @@ export function Console({
   ownerName,
   owner,
   baseUrl,
+  tenantId,
 }: {
   ownerName: string;
   owner: boolean;
   baseUrl: string;
+  tenantId?: string;
 }) {
   const [section, setSection] = useState<Section>("inbox");
   const [mobileNav, setMobileNav] = useState(false);
@@ -193,20 +196,10 @@ export function Console({
   const listSection = ["inbox", "starred", "archive"].includes(section);
   const visibleMessages = messages;
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-tenant-id={tenantId ?? ""}>
       <aside className={`sidebar ${mobileNav ? "mobile-open" : ""}`}>
         <Brand />
-        <button
-          className="workspace-button"
-          onClick={() => navigate("settings")}
-        >
-          <span className="workspace-avatar">P</span>
-          <span>
-            <strong>Personal workspace</strong>
-            <small>Private</small>
-          </span>
-          <ChevronDown size={15} />
-        </button>
+        <TenantSwitcher />
         <div className="nav-label">WORKSPACE</div>
         <nav aria-label="Main navigation">
           {(
@@ -274,7 +267,7 @@ export function Console({
             <span className="user-avatar">{ownerName.slice(0, 1)}</span>
             <span>
               <strong>{ownerName}</strong>
-              <small>{owner ? "Workspace owner" : "Space member"}</small>
+              <small>{owner ? "Tenant owner" : "Tenant member"}</small>
             </span>
             <MoreHorizontal size={18} />
           </button>
@@ -1605,6 +1598,7 @@ function SettingsPanel({
         )}
       </section>
       {owner && <MemberSettings spaces={spaces} onNotice={onNotice} />}
+      <PlatformTenants />
       <section className="surface settings-card">
         <h2>Your password</h2>
         <p>

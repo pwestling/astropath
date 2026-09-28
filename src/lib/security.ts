@@ -1,8 +1,8 @@
-import { randomUUID } from "node:crypto";
 import type { JWTPayload } from "jose";
 import { getAuth } from "./auth";
-import { db } from "./db";
-import { appUrl, SCOPES } from "./config";
+import { systemDb as db } from "./db";
+import { selectedTenant } from "./tenants";
+import { appUrl } from "./config";
 import { AppError } from "./errors";
 import { oauthConnectionClaim } from "./identities";
 import { z } from "zod";
@@ -34,7 +34,16 @@ export async function sessionPrincipal(
   requestHeaders: Headers,
 ): Promise<Principal | null> {
   const session = await getAuth().api.getSession({ headers: requestHeaders });
-  return session ? userPrincipal(db, session.user.id) : null;
+  if (!session) return null;
+  const selected = selectedTenant(requestHeaders);
+  const principal = await userPrincipal(db, session.user.id, selected);
+  if (principal || !selected) return principal;
+  // A removed/disabled membership must not silently switch content tenants.
+  // Keep account management accessible so the human can select another tenant.
+  const account = await userPrincipal(db, session.user.id);
+  return account
+    ? { ...account, tenantId: undefined, owner: false, spaces: [] }
+    : null;
 }
 
 export async function apiPrincipal(
@@ -56,12 +65,13 @@ export async function apiPrincipal(
       scopes: string[];
       spaces: string[] | null;
       created_by_user_id: string | null;
+      tenant_id: string;
     }>(
       options.touch === false
-        ? `SELECT id,name,scopes,spaces,created_by_user_id FROM ap_connections WHERE token_hash=$1 AND revoked_at IS NULL
+        ? `SELECT id,name,scopes,spaces,created_by_user_id,tenant_id FROM ap_connections WHERE token_hash=$1 AND revoked_at IS NULL
            AND (expires_at IS NULL OR expires_at > now())`
         : `UPDATE ap_connections SET last_used_at = now() WHERE token_hash=$1 AND revoked_at IS NULL
-           AND (expires_at IS NULL OR expires_at > now()) RETURNING id,name,scopes,spaces,created_by_user_id`,
+           AND (expires_at IS NULL OR expires_at > now()) RETURNING id,name,scopes,spaces,created_by_user_id,tenant_id`,
       [hash(match[1])],
     );
     const connection = result.rows[0];
@@ -71,10 +81,16 @@ export async function apiPrincipal(
         "invalid_token",
         "This token is invalid, expired, or revoked.",
       );
-    const { created_by_user_id, ...identity } = connection;
+    const { created_by_user_id, tenant_id, ...identity } = connection;
     return {
       ...identity,
-      spaces: await connectionSpaces(db, identity.spaces, created_by_user_id),
+      tenantId: tenant_id,
+      spaces: await connectionSpaces(
+        db,
+        identity.spaces,
+        created_by_user_id,
+        tenant_id,
+      ),
       owner: false,
     };
   }
@@ -128,13 +144,14 @@ export async function oauthPrincipal(
       name: string;
       spaces: string[] | null;
       scopes: string[];
+      tenant_id: string;
     }>(
       options.touch === false
-        ? `SELECT id,name,spaces,scopes FROM ap_connections WHERE id=$1 AND oauth_user_id=$2
+        ? `SELECT id,name,spaces,scopes,tenant_id FROM ap_connections WHERE id=$1 AND oauth_user_id=$2
        AND oauth_authorization_client_id=$3 AND kind='oauth' AND revoked_at IS NULL`
         : `UPDATE ap_connections SET last_used_at=now() WHERE id=$1 AND oauth_user_id=$2
        AND oauth_authorization_client_id=$3 AND kind='oauth' AND revoked_at IS NULL
-       RETURNING id,name,spaces,scopes`,
+       RETURNING id,name,spaces,scopes,tenant_id`,
       [identityId.data, claims.sub, clientId],
     );
     const identity = named.rows[0];
@@ -148,54 +165,22 @@ export async function oauthPrincipal(
       typeof claims.scope === "string" ? claims.scope.split(" ") : [];
     return {
       ...identity,
-      spaces: await connectionSpaces(db, identity.spaces, claims.sub),
+      tenantId: identity.tenant_id,
+      spaces: await connectionSpaces(
+        db,
+        identity.spaces,
+        claims.sub,
+        identity.tenant_id,
+      ),
       owner: false,
       scopes: identity.scopes.filter((scope) => granted.includes(scope)),
     };
   }
-  // Only the original owner had connections before per-authorization identities existed.
-  if (!account.owner)
-    throw new AppError(
-      403,
-      "invalid_identity",
-      "Reconnect this application to authorize a named identity.",
-    );
-  const client = await db.query<{ name: string | null }>(
-    'SELECT name FROM "oauthClient" WHERE "clientId"=$1',
-    [clientId],
+  throw new AppError(
+    403,
+    "connection_revoked",
+    "Reconnect this application to choose a tenant and named identity.",
   );
-  const scopes =
-    typeof claims.scope === "string"
-      ? claims.scope
-          .split(" ")
-          .filter((v) => SCOPES.includes(v as (typeof SCOPES)[number]))
-      : [];
-  const connection = await db.query<{
-    id: string;
-    name: string;
-    spaces: string[] | null;
-    revoked_at: Date | null;
-  }>(
-    options.touch === false
-      ? `SELECT id,name,spaces,revoked_at FROM ap_connections WHERE oauth_client_id=$1`
-      : `INSERT INTO ap_connections (id,name,kind,oauth_client_id,scopes) VALUES ($1,$2,'oauth',$3,$4)
-     ON CONFLICT (oauth_client_id) DO UPDATE SET last_used_at=now() RETURNING id,name,spaces,revoked_at`,
-    options.touch === false
-      ? [clientId]
-      : [
-          randomUUID(),
-          client.rows[0]?.name || "MCP application",
-          clientId,
-          [...SCOPES],
-        ],
-  );
-  if (!connection.rows[0] || connection.rows[0].revoked_at)
-    throw new AppError(
-      403,
-      "connection_revoked",
-      "This connection was revoked by the owner.",
-    );
-  return { ...connection.rows[0], scopes, owner: false };
 }
 
 export async function rateLimit(principal: Principal) {

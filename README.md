@@ -2,11 +2,11 @@
 
 A private workspace for your agents: messages, original files, and shared context across ChatGPT, Claude, Muse, and other tools. An owner dashboard and independent app credentials keep everything in one place.
 
-Astropath is evolving to include private and shared tenants, agent and thread presence, device relays, and a history of progress notes and summaries that can grow into a knowledge base. Those additions are planned; messaging, file transfer, and agent conversations work today. See the [architecture and implementation direction](docs/astropath-architecture.md) and [tenant membership and privacy design](docs/tenancy-and-privacy.md).
+Astropath supports tenant-scoped messages, encrypted file transfers, agent conversations, and an [immutable skills library](docs/skills-library.md). Agent/thread presence, device relays, and progress notes that can grow into a knowledge base remain planned. See the [architecture](docs/astropath-architecture.md) and [privacy design](docs/tenancy-and-privacy.md).
 
 Formerly Deaddrop. This release changes credentials, OAuth scopes, API routes, and MCP tool names. See the [upgrade guide](docs/astropath-upgrade.md) before updating an existing installation.
 
-**Current implementation: one deployment, one owner, one workspace.** The owner can invite members with access to specific spaces. Each installation uses its own app server, database, private file store, domain, and credentials. Multiple tenants and application-level encryption with server-held keys are planned and are not yet implemented; public signup remains disabled.
+**Multiple tenants with server-held encryption.** Human accounts can hold multiple tenant memberships. Spaces, messages, files, connections, events, and skills are isolated by tenant, with PostgreSQL row security and composite foreign keys. Each tenant has a separate encryption key wrapped by `ASTROPATH_MASTER_KEY`. Platform administration exposes tenant metadata and availability; content access requires membership. Public signup remains disabled. Existing installations must follow the [tenant migration guide](docs/tenant-migration.md) before running this version.
 
 **[Deploy on a VPS with Cloudflare R2 →](docs/vps-deployment.md)** · **[Deploy on Vercel with Blob →](docs/deployment.md)**
 
@@ -19,7 +19,7 @@ The guide covers a fresh account, custom domain and DNS, storage, environment va
 
 - Next.js App Router, React, TypeScript; deploy on a Node 24 VPS or Vercel.
 - Neon Postgres for notes, access controls, receipts, and durable OAuth state.
-- Private Cloudflare R2 or Vercel Blob storage with direct signed uploads and short-lived downloads.
+- Private Cloudflare R2 or Vercel Blob storage containing encrypted bytes; short-lived transfer links pass through Astropath.
 - Better Auth for owner email/password login, OAuth 2.1, PKCE, refresh tokens, CIMD, and a DCR compatibility fallback.
 - Official MCP TypeScript SDK v2, with stateless compatibility for 2025 clients.
 
@@ -33,7 +33,7 @@ npm run db:migrate
 npm run owner:create
 ```
 
-`OWNER_EMAIL` identifies the only authorized admin. `OWNER_NAME` optionally sets the initial display name (default: `Owner`). Remove `OWNER_PASSWORD` after the one-time `owner:create` step, switch `DATABASE_URL` to the pooled URL if using Neon, then start the server:
+`OWNER_EMAIL` identifies the platform administrator. `OWNER_NAME` optionally sets the initial display name (default: `Owner`). Generate `ASTROPATH_MASTER_KEY` with `openssl rand -base64 32` and keep it outside database/object backups. The migration role must be able to create/grant the `astropath_tenant` PostgreSQL role. Remove `OWNER_PASSWORD` after the one-time `owner:create` step, switch `DATABASE_URL` to the pooled URL if using Neon, then start the server:
 
 ```sh
 npm run dev
@@ -41,7 +41,7 @@ npm run dev
 
 Signups are disabled in the running server. Keep `BETTER_AUTH_SECRET` stable and secret. Use the authenticated Settings screen to change your password.
 
-Production needs `APP_URL` set to its stable HTTPS origin, `BETTER_AUTH_SECRET`, `OWNER_EMAIL`, `DATABASE_URL`, and credentials for the selected `STORAGE_PROVIDER`. For `r2`, set `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY`. The default `vercel` provider uses `BLOB_READ_WRITE_TOKEN`. The deployment must be reachable by external clients; hosting protection must not intercept the production API, MCP, or OAuth routes. App-level authentication remains required.
+Production needs `APP_URL` set to its stable HTTPS origin, `BETTER_AUTH_SECRET`, `ASTROPATH_MASTER_KEY`, `OWNER_EMAIL`, `DATABASE_URL`, and credentials for the selected `STORAGE_PROVIDER`. For `r2`, set `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY`. The default `vercel` provider uses `BLOB_READ_WRITE_TOKEN`. The deployment must be reachable by external clients; hosting protection must not intercept the production API, MCP, or OAuth routes. App-level authentication remains required. File uploads now pass through the app server, so configure your hosting/proxy request-size limits accordingly.
 
 Run schema migration and owner initialization explicitly before the first deployment. Never seed an owner during a public request. Preview and production deployments should use separate database branches and private storage buckets when they can contain different code or data.
 
@@ -52,6 +52,12 @@ Run schema migration and owner initialization explicitly before the first deploy
 In **Settings**, create a space, then invite a member by name and email and assign that space. Share the generated link privately. It expires after seven days, can be used once, and lets the member choose their own password. No email service is needed.
 
 Members can use and organize notes/files in their assigned spaces, create API tokens, authorize named OAuth connections, and revoke their own connections. They cannot manage members, create spaces, view other spaces, or manage someone else's connections. The owner retains access to every space; existing owner connections granted **All spaces** retain that access too.
+
+These permissions apply within the selected tenant. Use the tenant selector to
+create another private or shared tenant; its creator is its owner. API/OAuth
+connections stay pinned to the tenant selected when they were created. Existing
+accounts can create additional tenants, but accepting another tenant's invitation
+with an existing account is not enabled yet.
 
 A member's connections are limited both to the spaces granted when created and to the member's current access. Removing a space immediately blocks new requests to it; adding a different space does not expand an existing connection's grant. Authorize a new connection for the new space. Disabling a member signs them out and blocks their API/OAuth connections and token refresh. Previously issued signed file URLs keep their existing short expiry.
 

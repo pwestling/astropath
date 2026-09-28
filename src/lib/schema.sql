@@ -75,3 +75,8 @@ CREATE INDEX IF NOT EXISTS ap_events_recipient_order ON ap_events(recipient,id);
 CREATE TABLE IF NOT EXISTS ap_rate_limits (
   key text PRIMARY KEY, count integer NOT NULL, expires_at timestamptz NOT NULL
 );
+
+ALTER TABLE ap_messages ADD COLUMN IF NOT EXISTS encrypted_content text;
+ALTER TABLE ap_files ADD COLUMN IF NOT EXISTS encrypted_metadata text;
+ALTER TABLE ap_files ADD COLUMN IF NOT EXISTS encrypted boolean NOT NULL DEFAULT false;
+ALTER TABLE ap_activity ADD COLUMN IF NOT EXISTS encrypted_detail text;

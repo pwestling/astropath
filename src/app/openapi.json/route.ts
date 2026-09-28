@@ -2,6 +2,7 @@ import { z } from "zod";
 import { appUrl } from "@/lib/config";
 import { messageInput, fileInput } from "@/lib/validation";
 import { replyInput, waitMessagesInput, waitReplyInput } from "@/lib/chat";
+import { publishSkillInput, deprecateSkillInput } from "@/lib/skills";
 
 export const dynamic = "force-dynamic";
 export function GET() {
@@ -35,7 +36,7 @@ export function GET() {
         title: "Astropath API",
         version: "0.1.0",
         description:
-          "A private workspace for messages, files, and agent conversations. Authenticate with a per-app bearer token. Recipients are routing labels; spaces and token scopes control access. Original files remain private. Reads do not acknowledge messages.",
+          "Tenant-scoped messages, encrypted files, and immutable skill revisions. Each bearer token is pinned to one tenant. Human sessions select a tenant with X-Astropath-Tenant or the tenant selector. Recipients are routing labels; spaces and scopes control access. Reads do not acknowledge messages.",
       },
       servers: [{ url: `${appUrl()}/api/v1` }],
       security: [{ bearerAuth: [] }],
@@ -58,6 +59,109 @@ export function GET() {
         },
       },
       paths: {
+        "/skills": {
+          get: {
+            summary: "List accessible skills",
+            parameters: [
+              { name: "space", in: "query", schema: { type: "string" } },
+              {
+                name: "include_deprecated",
+                in: "query",
+                schema: { type: "boolean", default: false },
+              },
+              { name: "after", in: "query", schema: { type: "string" } },
+              {
+                name: "limit",
+                in: "query",
+                schema: {
+                  type: "integer",
+                  minimum: 1,
+                  maximum: 100,
+                  default: 30,
+                },
+              },
+            ],
+            responses: response,
+          },
+          post: {
+            summary: "Publish an immutable skill revision",
+            requestBody: body(z.toJSONSchema(publishSkillInput)),
+            responses: {
+              ...response,
+              "201": {
+                description:
+                  "Revision published or identical existing revision returned",
+              },
+            },
+          },
+        },
+        "/skills/{slug}": {
+          parameters: [
+            {
+              name: "slug",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          get: {
+            summary: "Pull the latest or an exact revision",
+            parameters: [
+              {
+                name: "space",
+                in: "query",
+                schema: { type: "string", default: "general" },
+              },
+              {
+                name: "revision_id",
+                in: "query",
+                schema: { type: "string", format: "uuid" },
+              },
+            ],
+            responses: response,
+          },
+          patch: {
+            summary: "Deprecate or restore a skill",
+            requestBody: body(
+              z.toJSONSchema(deprecateSkillInput.omit({ slug: true })),
+            ),
+            responses: response,
+          },
+        },
+        "/skills/{slug}/revisions": {
+          get: {
+            summary: "List immutable revision history",
+            parameters: [
+              {
+                name: "slug",
+                in: "path",
+                required: true,
+                schema: { type: "string" },
+              },
+              {
+                name: "space",
+                in: "query",
+                schema: { type: "string", default: "general" },
+              },
+              {
+                name: "before",
+                in: "query",
+                schema: { type: "integer", minimum: 1 },
+              },
+              {
+                name: "limit",
+                in: "query",
+                schema: {
+                  type: "integer",
+                  minimum: 1,
+                  maximum: 100,
+                  default: 30,
+                },
+              },
+            ],
+            responses: response,
+          },
+        },
         "/messages/wait": {
           post: {
             operationId: "waitForMessages",

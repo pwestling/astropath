@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { db, type Database, type Queryable } from "./db";
+import { db, forPrincipal, type Database, type Queryable } from "./db";
 import { AppError } from "./errors";
 import { hash, requireScope, requireSpace, type Principal } from "./policy";
 import { messageInput, listInput } from "./validation";
 import { publishMessageEvent } from "./events";
 
 export interface Message {
+  encrypted_content?: string | null;
   id: string;
   title: string;
   body: string;
@@ -25,6 +26,8 @@ export interface Message {
   reply_count?: number;
 }
 export interface Attachment {
+  encrypted_metadata?: string | null;
+  encrypted?: boolean;
   id: string;
   name: string;
   content_type: string;
@@ -63,6 +66,35 @@ export function encodeCursor(message: Message) {
   ).toString("base64url");
 }
 
+export function decodeMessage<
+  T extends { id: string; encrypted_content?: string | null },
+>(database: Queryable, row: T): T {
+  const { encrypted_content, ...metadata } = row;
+  if (!database.cipher) return row;
+  if (!encrypted_content)
+    throw new Error("Unencrypted message requires migration");
+  return {
+    ...metadata,
+    ...database.cipher.decrypt<object>(`message:${row.id}`, encrypted_content),
+  } as T;
+}
+
+export function decodeFile<
+  T extends { id: string; encrypted_metadata?: string | null },
+>(database: Queryable, row: T): T {
+  const { encrypted_metadata, ...metadata } = row;
+  if (!database.cipher) return row;
+  if (!encrypted_metadata)
+    throw new Error("Unencrypted file metadata requires migration");
+  return {
+    ...metadata,
+    ...database.cipher.decrypt<object>(
+      `file-metadata:${row.id}`,
+      encrypted_metadata,
+    ),
+  } as T;
+}
+
 export class MessageStore {
   constructor(private database: Database) {}
 
@@ -73,28 +105,36 @@ export class MessageStore {
     detail: string | null = null,
     tx: Queryable = this.database,
   ) {
-    await tx.query(
-      "INSERT INTO ap_activity(actor,action,target_id,detail) VALUES($1,$2,$3,$4)",
-      [actor, action, target, detail],
+    const result = await tx.query<{ id: string }>(
+      "INSERT INTO ap_activity(actor,action,target_id,detail) VALUES($1,$2,$3,$4) RETURNING id::text",
+      [actor, action, target, tx.cipher ? null : detail],
     );
+    if (tx.cipher && detail !== null)
+      await tx.query("UPDATE ap_activity SET encrypted_detail=$2 WHERE id=$1", [
+        result.rows[0].id,
+        tx.cipher.encrypt(`activity:${result.rows[0].id}`, detail),
+      ]);
   }
 
   async get(
     principal: Principal,
     id: string,
-    tx: Queryable = this.database,
+    tx?: Queryable,
   ): Promise<Message> {
+    tx ??= await forPrincipal(this.database, principal);
     requireScope(principal, "astropath:read");
-    const result = await tx.query<Message>("SELECT * FROM ap_messages WHERE id=$1", [
-      z.uuid().parse(id),
-    ]);
+    const result = await tx.query<Message>(
+      "SELECT * FROM ap_messages WHERE id=$1",
+      [z.uuid().parse(id)],
+    );
     const message = result.rows[0];
     if (!message) throw new AppError(404, "not_found", "Message not found.");
     requireSpace(principal, message.space);
-    return message;
+    return decodeMessage(tx, message);
   }
 
   async list(principal: Principal, raw: unknown) {
+    const database = await forPrincipal(this.database, principal);
     requireScope(principal, "astropath:read");
     const input = listInput.parse(raw);
     if (input.space) requireSpace(principal, input.space);
@@ -111,11 +151,12 @@ export class MessageStore {
       where.push(`d.space = ANY(${arg(principal.spaces)}::text[])`);
     if (input.space) where.push(`d.space=${arg(input.space)}`);
     if (input.recipient) where.push(`d.recipient=${arg(input.recipient)}`);
-    if (input.q)
+    if (input.q && !database.cipher)
       where.push(
         `(to_tsvector('english',d.title || ' ' || d.body) @@ websearch_to_tsquery('english',${arg(input.q)}) OR d.title ILIKE ${arg(`%${input.q.replace(/[\\%_]/g, "\\$&")}%`)})`,
       );
-    if (input.unread) where.push("r.message_id IS NULL AND d.principal_id <> $1");
+    if (input.unread)
+      where.push("r.message_id IS NULL AND d.principal_id <> $1");
     if (input.pinned) where.push("d.pinned=true");
     if (input.with_files)
       where.push("EXISTS (SELECT 1 FROM ap_files f WHERE f.message_id=d.id)");
@@ -125,17 +166,53 @@ export class MessageStore {
         `(d.created_at,d.id)<(${arg(cursor.created_at)}::timestamptz,${arg(cursor.id)}::uuid)`,
       );
     }
-    const result = await this.database.query<Message>(
-      `SELECT d.*, to_char(d.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at,
+    const fetchPage = async (
+      limit: number,
+      before?: { created_at: string; id: string },
+    ) => {
+      const pageArgs = [...args];
+      const pageWhere = [...where];
+      if (before) {
+        pageArgs.push(before.created_at, before.id);
+        pageWhere.push(
+          `(d.created_at,d.id)<($${pageArgs.length - 1}::timestamptz,$${pageArgs.length}::uuid)`,
+        );
+      }
+      pageArgs.push(limit);
+      return database.query<Message>(
+        `SELECT d.*, to_char(d.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at,
        (r.message_id IS NULL AND d.principal_id<>$1) AS unread,
        (SELECT count(*)::integer FROM ap_files f WHERE f.message_id=d.id) AS attachment_count,
        (SELECT count(*)::integer FROM ap_messages reply WHERE reply.thread_id=d.id AND reply.parent_id IS NOT NULL) AS reply_count
        FROM ap_messages d LEFT JOIN ap_receipts r ON r.message_id=d.id AND r.principal_id=$1
-       WHERE ${where.join(" AND ")} ORDER BY d.created_at DESC,d.id DESC LIMIT ${arg(input.limit + 1)}`,
-      args,
-    );
-    const more = result.rows.length > input.limit;
-    const messages = result.rows.slice(0, input.limit);
+       WHERE ${pageWhere.join(" AND ")} ORDER BY d.created_at DESC,d.id DESC LIMIT $${pageArgs.length}`,
+        pageArgs,
+      );
+    };
+    // Search authorized plaintext in memory, with no plaintext database index.
+    const rows: Message[] = [];
+    let before: { created_at: string; id: string } | undefined;
+    const search =
+      database.cipher && input.q ? input.q.toLocaleLowerCase() : undefined;
+    do {
+      const batchSize = search ? 200 : input.limit + 1;
+      const page = await fetchPage(batchSize, before);
+      for (const row of page.rows) {
+        const decoded = decodeMessage(database, row);
+        if (
+          !search ||
+          `${decoded.title} ${decoded.body}`
+            .toLocaleLowerCase()
+            .includes(search)
+        )
+          rows.push(decoded);
+        if (rows.length > input.limit) break;
+      }
+      if (rows.length > input.limit || page.rows.length < batchSize) break;
+      before = page.rows.at(-1);
+    } while (search);
+    const more = rows.length > input.limit;
+    const messages = rows.slice(0, input.limit);
     return {
       messages,
       next_cursor: more ? encodeCursor(messages[messages.length - 1]) : null,
@@ -143,21 +220,27 @@ export class MessageStore {
   }
 
   async detail(principal: Principal, id: string) {
+    const database = await forPrincipal(this.database, principal);
     const message = await this.get(principal, id);
     const [files, replies] = await Promise.all([
-      this.database.query<Attachment>(
-        "SELECT id,name,content_type,size,message_id,status FROM ap_files WHERE message_id=$1 ORDER BY created_at",
+      database.query<Attachment>(
+        "SELECT * FROM ap_files WHERE message_id=$1 ORDER BY created_at",
         [message.id],
       ),
-      this.database.query<Message>(
+      database.query<Message>(
         "SELECT * FROM ap_messages WHERE thread_id=$1 AND parent_id IS NOT NULL ORDER BY created_at,id",
         [message.thread_id],
       ),
     ]);
-    return { message, attachments: files.rows, replies: replies.rows };
+    return {
+      message,
+      attachments: files.rows.map((row) => decodeFile(database, row)),
+      replies: replies.rows.map((row) => decodeMessage(database, row)),
+    };
   }
 
   async create(principal: Principal, raw: unknown, idempotencyKey?: string) {
+    const database = await forPrincipal(this.database, principal);
     requireScope(principal, "astropath:write");
     const input = messageInput.parse(raw);
     input.space ??= principal.spaces?.[0] || "general";
@@ -178,7 +261,7 @@ export class MessageStore {
         "Use a printable key of at most 150 characters.",
       );
     const requestHash = hash(JSON.stringify(input));
-    return this.database.transaction(async (tx) => {
+    return database.transaction(async (tx) => {
       // Serialize identical retry keys across serverless instances before checking the result.
       if (idempotencyKey) {
         await tx.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
@@ -200,7 +283,7 @@ export class MessageStore {
             [existing.rows[0].id],
           );
           return {
-            message: existing.rows[0],
+            message: decodeMessage(tx, existing.rows[0]),
             replayed: true,
             cursor: event.rows[0]?.id ?? null,
           };
@@ -240,21 +323,30 @@ export class MessageStore {
           );
       }
       const result = await tx.query<Message>(
-        `INSERT INTO ap_messages(id,space,title,body,sender,principal_id,recipient,tags,parent_id,thread_id,idempotency_key,request_hash)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+        `INSERT INTO ap_messages(id,space,title,body,sender,principal_id,recipient,tags,parent_id,thread_id,idempotency_key,request_hash${tx.cipher ? ",encrypted_content" : ""})
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12${tx.cipher ? ",$13" : ""}) RETURNING *`,
         [
           id,
           input.space,
-          input.title,
-          input.body,
+          tx.cipher ? "" : input.title,
+          tx.cipher ? "" : input.body,
           principal.name,
           principal.id,
           input.recipient || null,
-          input.tags,
+          tx.cipher ? [] : input.tags,
           input.parent_id || null,
           threadId,
           idempotencyKey || null,
           requestHash,
+          ...(tx.cipher
+            ? [
+                tx.cipher.encrypt(`message:${id}`, {
+                  title: input.title,
+                  body: input.body,
+                  tags: input.tags,
+                }),
+              ]
+            : []),
         ],
       );
       await tx.query(
@@ -280,24 +372,36 @@ export class MessageStore {
           attachment_ids: input.attachment_ids,
         },
       );
-      return { message: result.rows[0], replayed: false, cursor };
+      return {
+        message: decodeMessage(tx, result.rows[0]),
+        replayed: false,
+        cursor,
+      };
     });
   }
 
   async acknowledge(principal: Principal, id: string) {
-    await this.database.transaction(async (tx) => {
+    const database = await forPrincipal(this.database, principal);
+    await database.transaction(async (tx) => {
       const message = await this.get(principal, id, tx);
       const result = await tx.query(
         "INSERT INTO ap_receipts(message_id,principal_id) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING message_id",
         [id, principal.id],
       );
       if (result.rows.length)
-        await publishMessageEvent(tx, "message.acknowledged", principal, message, {});
+        await publishMessageEvent(
+          tx,
+          "message.acknowledged",
+          principal,
+          message,
+          {},
+        );
     });
     return { acknowledged: true, id };
   }
 
   async update(principal: Principal, id: string, raw: unknown) {
+    const database = await forPrincipal(this.database, principal);
     if (!principal.owner && !principal.userId)
       throw new AppError(
         403,
@@ -311,7 +415,7 @@ export class MessageStore {
       })
       .strict()
       .parse(raw);
-    return this.database.transaction(async (tx) => {
+    return database.transaction(async (tx) => {
       await this.get(principal, id, tx);
       const result = await tx.query<Message>(
         `UPDATE ap_messages SET pinned=COALESCE($2,pinned),
@@ -320,29 +424,38 @@ export class MessageStore {
         [id, change.pinned ?? null, change.archived ?? null],
       );
       await this.activity(principal.name, "organized", id, null, tx);
-      await publishMessageEvent(tx, "message.updated", principal, result.rows[0], {
-        pinned: result.rows[0].pinned,
-        archived_at: result.rows[0].archived_at,
-      });
-      return { message: result.rows[0] };
+      await publishMessageEvent(
+        tx,
+        "message.updated",
+        principal,
+        result.rows[0],
+        {
+          pinned: result.rows[0].pinned,
+          archived_at: result.rows[0].archived_at,
+        },
+      );
+      return { message: decodeMessage(tx, result.rows[0]) };
     });
   }
 
   async file(principal: Principal, id: string) {
+    const database = await forPrincipal(this.database, principal);
     requireScope(principal, "astropath:read");
-    const result = await this.database.query<Attachment>(
+    const result = await database.query<Attachment>(
       "SELECT * FROM ap_files WHERE id=$1",
       [z.uuid().parse(id)],
     );
     const file = result.rows[0];
     if (
       !file ||
-      (!file.message_id && file.principal_id !== principal.id && !principal.owner)
+      (!file.message_id &&
+        file.principal_id !== principal.id &&
+        !principal.owner)
     )
       throw new AppError(404, "not_found", "File not found.");
     requireSpace(principal, file.space);
     if (file.message_id) await this.get(principal, file.message_id);
-    return file;
+    return decodeFile(database, file);
   }
 }
 export const store = new MessageStore(db);

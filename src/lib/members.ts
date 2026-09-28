@@ -1,8 +1,8 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { hashPassword } from "better-auth/crypto";
 import { z } from "zod";
-import type { Database, Queryable } from "./db";
-import { appUrl, ownerEmail } from "./config";
+import { forPrincipal, type Database, type Queryable } from "./db";
+import { appUrl } from "./config";
 import { AppError } from "./errors";
 import { hash, type Principal } from "./policy";
 import { identityName, spaceSlug } from "./validation";
@@ -23,7 +23,7 @@ const memberInput = z
   })
   .strict();
 const columns =
-  "id,email,name,user_id,spaces,disabled_at,created_at,invite_expires_at";
+  "id,email,name,user_id,spaces,role,disabled_at,created_at,invite_expires_at";
 function ownerOnly(principal: Principal) {
   if (!principal.owner)
     throw new AppError(
@@ -52,9 +52,10 @@ export class MemberStore {
   constructor(private database: Database) {}
   async list(principal: Principal) {
     ownerOnly(principal);
+    const database = await forPrincipal(this.database, principal);
     return {
       members: (
-        await this.database.query(
+        await database.query(
           `SELECT ${columns} FROM ap_members ORDER BY created_at`,
         )
       ).rows,
@@ -62,17 +63,16 @@ export class MemberStore {
   }
   async create(principal: Principal, raw: unknown) {
     ownerOnly(principal);
+    const database = await forPrincipal(this.database, principal);
     const input = memberInput.parse(raw);
-    if (input.email === ownerEmail())
-      throw new AppError(409, "owner_exists", "The owner already has access.");
     const invite = invitation();
-    return this.database.transaction(async (tx) => {
+    return database.transaction(async (tx) => {
       await tx.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
         `member-email:${input.email}`,
       ]);
       await validateSpaces(tx, input.spaces);
       const existing = await tx.query(
-        `SELECT email FROM "user" WHERE lower(email)=$1 UNION ALL SELECT email FROM ap_members WHERE email=$1`,
+        "SELECT email FROM ap_members WHERE email=$1",
         [input.email],
       );
       if (existing.rows.length)
@@ -97,6 +97,7 @@ export class MemberStore {
   }
   async update(principal: Principal, id: string, raw: unknown) {
     ownerOnly(principal);
+    const database = await forPrincipal(this.database, principal);
     const input = z
       .object({
         spaces: spaceList.optional(),
@@ -104,29 +105,28 @@ export class MemberStore {
       })
       .strict()
       .parse(raw);
-    return this.database.transaction(async (tx) => {
+    return database.transaction(async (tx) => {
       if (input.spaces) await validateSpaces(tx, input.spaces);
       const result = await tx.query<{ user_id: string | null }>(
         `UPDATE ap_members SET spaces=COALESCE($2,spaces),
         disabled_at=CASE WHEN $3::boolean IS NULL THEN disabled_at WHEN $3 THEN now() ELSE NULL END,
         invite_hash=CASE WHEN $3 THEN NULL ELSE invite_hash END,
         invite_expires_at=CASE WHEN $3 THEN NULL ELSE invite_expires_at END
-        WHERE id=$1 RETURNING ${columns}`,
+        WHERE id=$1 AND role='member' RETURNING ${columns}`,
         [z.uuid().parse(id), input.spaces ?? null, input.disabled ?? null],
       );
       if (!result.rows.length)
         throw new AppError(404, "not_found", "Member not found.");
-      if (input.disabled && result.rows[0].user_id)
-        await tx.query('DELETE FROM session WHERE "userId"=$1', [
-          result.rows[0].user_id,
-        ]);
+      // Revocation is checked per tenant on every request, including active waits.
+      // Sessions for the same person's other tenants remain valid.
       return { member: result.rows[0] };
     });
   }
   async reinvite(principal: Principal, id: string) {
     ownerOnly(principal);
+    const database = await forPrincipal(this.database, principal);
     const invite = invitation();
-    const result = await this.database.query(
+    const result = await database.query(
       `UPDATE ap_members SET invite_hash=$2,invite_expires_at=now()+interval '7 days'
       WHERE id=$1 AND user_id IS NULL AND disabled_at IS NULL RETURNING id`,
       [z.uuid().parse(id), invite.invite_hash],
@@ -145,9 +145,11 @@ export class MemberStore {
       name: string;
       email: string;
       spaces: string[];
+      tenant_id: string;
     }>(
-      `SELECT id,name,email,spaces FROM ap_members
-      WHERE invite_hash=$1 AND invite_expires_at>now() AND user_id IS NULL AND disabled_at IS NULL${lock ? " FOR UPDATE" : ""}`,
+      `SELECT id,name,email,spaces,tenant_id FROM ap_members
+      WHERE invite_hash=$1 AND invite_expires_at>now() AND user_id IS NULL AND disabled_at IS NULL
+      AND EXISTS(SELECT 1 FROM ap_tenants t WHERE t.id=tenant_id AND t.disabled_at IS NULL)${lock ? " FOR UPDATE" : ""}`,
       [
         hash(
           z
@@ -168,8 +170,8 @@ export class MemberStore {
   async inspect(token: string) {
     const member = await this.pending(this.database, token);
     const spaces = await this.database.query(
-      "SELECT slug,name FROM ap_spaces WHERE slug=ANY($1::text[]) ORDER BY name",
-      [member.spaces],
+      "SELECT slug,name FROM ap_spaces WHERE slug=ANY($1::text[]) AND tenant_id=$2 ORDER BY name",
+      [member.spaces, member.tenant_id],
     );
     return { name: member.name, email: member.email, spaces: spaces.rows };
   }
@@ -177,6 +179,19 @@ export class MemberStore {
     z.string().min(12).max(128).parse(password);
     return this.database.transaction(async (tx) => {
       const member = await this.pending(tx, token, true);
+      await tx.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+        `account-email:${member.email}`,
+      ]);
+      const existing = await tx.query(
+        'SELECT id FROM "user" WHERE lower(email)=$1',
+        [member.email],
+      );
+      if (existing.rows.length)
+        throw new AppError(
+          409,
+          "existing_account",
+          "This email already has an account. Joining another tenant with an existing account is not available yet.",
+        );
       const userId = randomUUID();
       // Use Better Auth's password format and atomically create its credential account with membership.
       // Public sign-up stays disabled; only a valid, single-use owner invitation reaches this code.

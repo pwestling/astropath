@@ -12,7 +12,7 @@ export async function eventResponse(
 ) {
   const { after, ...filter } = eventSubscription(request);
   await events.validate(principal, filter);
-  const head = await events.latest();
+  const head = await events.latest(principal);
   if (after && BigInt(after) > BigInt(head))
     throw new AppError(
       400,
@@ -73,6 +73,15 @@ export async function eventResponse(
               // Recheck revocation, expiry and membership on every batch, even while idle.
               const current = await authenticate();
               if (closed) return;
+              if (
+                current.id !== principal.id ||
+                current.tenantId !== principal.tenantId
+              )
+                throw new AppError(
+                  403,
+                  "identity_changed",
+                  "Connection identity changed.",
+                );
               const batch = await events.read(current, filter, cursor);
               for (const event of batch.events) {
                 if (!send(event.type, event, event.id)) return;
@@ -93,7 +102,7 @@ export async function eventResponse(
               if (!known)
                 console.error(
                   "Astropath event stream failed",
-                  error instanceof Error ? error.message : "Unknown error",
+                  error instanceof Error ? error.name : "Unknown error",
                 );
               send("stream_error", {
                 code: known ? error.code : "internal_error",

@@ -3,6 +3,8 @@ import type { NextConfig } from "next";
 const config: NextConfig = {
   output: "standalone",
   serverExternalPackages: ["pg"],
+  // Request URLs can contain search text or short-lived file capabilities.
+  logging: { incomingRequests: false },
   async headers() {
     return [
       {

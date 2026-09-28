@@ -16,14 +16,20 @@ async function main() {
     size: string;
     content_type: string;
     status: string;
+    encrypted: boolean;
   }>(
-    "SELECT pathname,size,content_type,status FROM ap_files ORDER BY created_at",
+    "SELECT pathname,size,content_type,status,encrypted FROM ap_files ORDER BY created_at",
   );
   let copied = 0,
     verified = 0,
     pending = 0,
     destinationOnly = 0;
   for (const file of files.rows) {
+    // v1. + unpadded base64url(nonce[12] + tag[16] + original bytes).
+    // Database size remains the size of the original user file.
+    const storedSize = file.encrypted
+      ? 3 + Math.ceil(((Number(file.size) + 28) * 4) / 3)
+      : Number(file.size);
     let source: Awaited<ReturnType<typeof get>> | undefined;
     try {
       source = await get(file.pathname, { access: "private", useCache: false });
@@ -40,7 +46,7 @@ async function main() {
         );
         const bytes = await result.Body?.transformToByteArray();
         assert.ok(bytes);
-        assert.equal(bytes.length, Number(file.size));
+        assert.equal(bytes.length, storedSize);
         assert.equal(result.ContentType, file.content_type);
         destinationOnly++;
       } catch (error) {
@@ -58,7 +64,7 @@ async function main() {
     assert.ok(source.stream);
     const bytes = Buffer.from(await new Response(source.stream).arrayBuffer());
     const meta = await head(file.pathname);
-    assert.equal(bytes.length, Number(file.size), "Source size mismatch");
+    assert.equal(bytes.length, storedSize, "Source size mismatch");
     assert.equal(meta.contentType, file.content_type, "Source MIME mismatch");
     let existing: Uint8Array | undefined;
     try {

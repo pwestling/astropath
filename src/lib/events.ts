@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Queryable } from "./db";
+import { forPrincipal, type Database, type Queryable } from "./db";
 import type { Message } from "./store";
 import { AppError } from "./errors";
 import { requireScope, requireSpace, type Principal } from "./policy";
@@ -27,7 +27,8 @@ export type EventFilter = Pick<
   z.infer<typeof subscription>,
   "space" | "recipient"
 >;
-export type EventType = "message.created" | "message.updated" | "message.acknowledged";
+export type EventType =
+  "message.created" | "message.updated" | "message.acknowledged";
 export interface MessageEvent {
   id: string;
   type: EventType;
@@ -66,23 +67,30 @@ export async function publishMessageEvent(
       message.id,
       principal.id,
       principal.name,
-      JSON.stringify(data),
+      JSON.stringify(
+        tx.cipher
+          ? { sealed: tx.cipher.encrypt(`event:${message.id}:${type}`, data) }
+          : data,
+      ),
     ],
   );
   return result.rows[0].id;
 }
 
 export class EventStore {
-  constructor(private database: Queryable) {}
+  constructor(private database: Database) {}
 
-  async latest() {
+  async latest(principal?: Principal) {
+    const database = principal
+      ? await forPrincipal(this.database, principal)
+      : this.database;
     // Read the non-transactional sequence only after taking the publication lock.
     // Without that lock an uncommitted event could be skipped; max(id) instead
     // regresses when events are deleted (e.g. isolated smoke-test cleanup).
     // The materialized CTE runs first, and the volatile sequence read runs while
     // this statement still holds its shared transaction lock. Identity CACHE=1.
     return (
-      await this.database.query<{ id: string }>(
+      await database.query<{ id: string }>(
         `WITH locked AS MATERIALIZED (SELECT pg_advisory_xact_lock_shared(1788124201, 1))
          SELECT COALESCE(pg_sequence_last_value('ap_events_id_seq'::regclass),0)::text AS id FROM locked`,
       )
@@ -90,15 +98,15 @@ export class EventStore {
   }
 
   async validate(principal: Principal, filter: EventFilter) {
+    const database = await forPrincipal(this.database, principal);
     requireScope(principal, "astropath:read");
     if (filter.space) {
       requireSpace(principal, filter.space);
       if (
         !(
-          await this.database.query(
-            "SELECT slug FROM ap_spaces WHERE slug=$1",
-            [filter.space],
-          )
+          await database.query("SELECT slug FROM ap_spaces WHERE slug=$1", [
+            filter.space,
+          ])
         ).rows.length
       )
         throw new AppError(404, "not_found", "Space not found.");
@@ -106,11 +114,12 @@ export class EventStore {
   }
 
   async read(principal: Principal, filter: EventFilter, after: string) {
+    const database = await forPrincipal(this.database, principal);
     requireScope(principal, "astropath:read");
     if (filter.space) requireSpace(principal, filter.space);
-    const head = await this.latest();
+    const head = await this.latest(principal);
     const events = (
-      await this.database.query<MessageEvent>(
+      await database.query<MessageEvent>(
         `SELECT id::text,type,space,recipient,message_id,actor_id,actor,data,created_at
        FROM ap_events WHERE id>$1::bigint AND id<=$2::bigint
        AND ($3::text[] IS NULL OR space=ANY($3))
@@ -127,7 +136,15 @@ export class EventStore {
     ).rows;
     // Bound the scan to a committed high-water mark, including when no events match.
     return {
-      events,
+      events: events.map((event) => ({
+        ...event,
+        data: database.cipher
+          ? database.cipher.decrypt<Record<string, unknown>>(
+              `event:${event.message_id}:${event.type}`,
+              String(event.data.sealed),
+            )
+          : event.data,
+      })),
       cursor: events.length === 100 ? events[events.length - 1].id : head,
     };
   }

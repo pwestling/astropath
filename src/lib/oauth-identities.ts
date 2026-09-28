@@ -4,7 +4,8 @@ import { APIError } from "better-auth/api";
 import { getOAuthProviderState } from "@better-auth/oauth-provider";
 import { z } from "zod";
 import { appUrl, SCOPES } from "./config";
-import { db } from "./db";
+import { systemDb as db, tenantDatabase } from "./db";
+import { selectedTenant } from "./tenants";
 import { AppError, errorResponse, jsonBody } from "./errors";
 import { CONNECTION_CLAIM, IdentityStore } from "./identities";
 import { identityName } from "./validation";
@@ -14,9 +15,9 @@ import { userPrincipal, connectionSpaces } from "./access";
 const approval = new AsyncLocalStorage<{
   name: string;
   signedQuery: string;
+  tenantId?: string;
   identity?: Promise<string>;
 }>();
-const identities = new IdentityStore(db);
 
 export async function handleNamedConsent(
   request: Request,
@@ -40,8 +41,13 @@ export async function handleNamedConsent(
       .parse(await jsonBody(request.clone(), 20000));
     if (!body.accept) return handler(request);
     const name = identityName.parse(body.identity_name);
-    return await approval.run({ name, signedQuery: body.oauth_query }, () =>
-      handler(request),
+    return await approval.run(
+      {
+        name,
+        signedQuery: body.oauth_query,
+        tenantId: selectedTenant(request.headers),
+      },
+      () => handler(request),
     );
   } catch (error) {
     return errorResponse(error);
@@ -60,25 +66,28 @@ export const oauthIdentityOptions = {
       user: { id: string; email: string };
       scopes: string[];
     }) => {
-      const account = await userPrincipal(db, user.id);
+      const current = approval.getStore();
+      const account = await userPrincipal(db, user.id, current?.tenantId);
       if (!account)
         throw new APIError("FORBIDDEN", {
           message: "Your account does not have access to connect applications.",
         });
-      const current = approval.getStore();
       // Better Auth has already verified the signed OAuth query before invoking this hook.
       const state = await getOAuthProviderState();
       const clientId = new URLSearchParams(state?.query).get("client_id");
-      if (!current || !clientId)
+      if (!current || !clientId || !account.tenantId)
         throw new APIError("BAD_REQUEST", {
           message: "Name this connection on the approval screen.",
         });
+      const identities = new IdentityStore(
+        await tenantDatabase(account.tenantId),
+      );
       current.identity ??= identities.approve({
         name: current.name,
         userId: user.id,
         clientId,
         approvalKey: createHash("sha256")
-          .update(`${user.id}\n${current.signedQuery}`)
+          .update(`${user.id}\n${account.tenantId}\n${current.signedQuery}`)
           .digest("hex"),
         scopes: scopes.filter((scope) =>
           SCOPES.includes(scope as (typeof SCOPES)[number]),
@@ -117,8 +126,12 @@ export const oauthIdentityOptions = {
       throw new APIError("FORBIDDEN", {
         message: "Invalid connection identity.",
       });
-    const result = await db.query<{ id: string; spaces: string[] | null }>(
-      "SELECT id,spaces FROM ap_connections WHERE id=$1 AND oauth_user_id=$2 AND kind='oauth' AND revoked_at IS NULL",
+    const result = await db.query<{
+      id: string;
+      spaces: string[] | null;
+      tenant_id: string;
+    }>(
+      "SELECT id,spaces,tenant_id FROM ap_connections WHERE id=$1 AND oauth_user_id=$2 AND kind='oauth' AND revoked_at IS NULL",
       [id.data, user.id],
     );
     if (!result.rows.length)
@@ -126,7 +139,12 @@ export const oauthIdentityOptions = {
         message: "This connection was revoked or no longer exists.",
       });
     try {
-      await connectionSpaces(db, result.rows[0].spaces, user.id);
+      await connectionSpaces(
+        db,
+        result.rows[0].spaces,
+        user.id,
+        result.rows[0].tenant_id,
+      );
     } catch {
       throw new APIError("FORBIDDEN", {
         message:

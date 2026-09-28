@@ -2,9 +2,15 @@ export async function api<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
+  const tenantId =
+    document.querySelector<HTMLElement>("[data-tenant-id]")?.dataset.tenantId;
   const response = await fetch(`/api/v1/${path}`, {
     ...options,
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...(tenantId ? { "X-Astropath-Tenant": tenantId } : {}),
+      ...options.headers,
+    },
     cache: "no-store",
   });
   const data = await response.json();
