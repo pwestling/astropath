@@ -85,3 +85,20 @@ access to the checkout without opening `/root` to that account. If the unit
 changes, copy the tracked unit to `/etc/systemd/system/astropath-dev.service`,
 then run `systemctl daemon-reload` and restart it. Restoring or replacing a
 tracked file removes its file ACL, which is why the update steps reapply it.
+
+## Deploy production from RackNerd
+
+The checkout can deploy its committed revision to `vps-01` over Tailscale SSH:
+
+```sh
+cd /root/dev/astropath
+git status --short
+bash scripts/deploy-vps-01.sh
+```
+
+The deployment uses the pinned VPS host key in `deploy/vps-01-known_hosts`,
+archives committed source, builds and tests on the NixOS VPS, preflights the
+release, and rolls back the app release if the final health check fails. The
+script tolerates only Next's generated `next-env.d.ts` change in the development
+checkout. Commit all actual app changes before deploying. Schema migrations
+remain a separate reviewed step.

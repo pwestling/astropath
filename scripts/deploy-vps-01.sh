@@ -2,26 +2,34 @@
 set -euo pipefail
 
 repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-infra_repo="${VPS_INFRA_REPO:-/Users/pwestling/dev/personal/vps}"
-target=root@vps-01.tailf51383.ts.net
+target=root@100.107.251.43
+known_hosts="$repo_dir/deploy/vps-01-known_hosts"
 ssh_options=(
   -o BatchMode=yes
   -o StrictHostKeyChecking=yes
-  -o "UserKnownHostsFile=$infra_repo/hosts/vps-01/ssh_known_hosts"
+  -o "UserKnownHostsFile=$known_hosts"
   -o ConnectTimeout=15
 )
 
-if [[ -n "$(git -C "$repo_dir" status --porcelain)" ]]; then
-  echo "Commit the app source before deploying it." >&2
-  exit 1
+status="$(git -C "$repo_dir" status --porcelain --untracked-files=all)"
+if [[ -n "$status" ]]; then
+  # Next dev rewrites this tracked file to reference .next/dev/types. The
+  # release archive still contains the committed production version.
+  if [[ "$status" != ' M next-env.d.ts' ]] ||
+    ! cmp -s "$repo_dir/next-env.d.ts" \
+      <(git -C "$repo_dir" show HEAD:next-env.d.ts | sed 's#\.next/types/#.next/dev/types/#g'); then
+    echo "Commit the app source before deploying it (only generated next-env.d.ts changes are allowed)." >&2
+    git -C "$repo_dir" status --short >&2
+    exit 1
+  fi
 fi
-test -s "$infra_repo/hosts/vps-01/ssh_known_hosts"
+test -s "$known_hosts"
 revision="$(git -C "$repo_dir" rev-parse HEAD)"
 release="$(date -u +%Y%m%dT%H%M%SZ)-${revision:0:7}"
 stage="/var/tmp/deaddrop-build-$release"
 
 # The archive contains committed source only. No local .env file, .git directory,
-# macOS dependency tree, or build cache crosses to the server.
+# dependency tree, or build cache crosses to the server.
 git -C "$repo_dir" archive HEAD |
   ssh "${ssh_options[@]}" "$target" \
     "mkdir -m 0700 '$stage' && tar --no-same-owner -xf - -C '$stage'"

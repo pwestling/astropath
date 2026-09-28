@@ -123,9 +123,12 @@ before considering a production switch. Never restore over the live database.
 
 ## Normal deployment
 
-From a clean, committed app checkout on Porter's Mac, run
-`./scripts/deploy-vps-01.sh`. It archives the commit, builds from the lockfile
-on NixOS inside `builds.slice`, runs the checks, stages a root-owned release,
+From a committed app checkout on Porter's Mac or `/root/dev/astropath` on
+RackNerd, run `./scripts/deploy-vps-01.sh`. It uses the pinned tailnet IP and
+host key in `deploy/vps-01-known_hosts` and accepts only Next's generated
+`next-env.d.ts` change in an otherwise clean development checkout. It archives
+the commit, builds from the lockfile on NixOS inside `builds.slice`, runs the
+checks, stages a root-owned release,
 tests it on loopback port 4311, atomically promotes `current`, restarts the
 declarative service, and checks port 4310. A failed health check restores the
 previous release when one exists. It does not modify DNS, nginx, systemd unit
