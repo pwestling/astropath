@@ -74,12 +74,14 @@ export PATH=/opt/deaddrop-node/bin:$PATH
 npm ci --no-audit --no-fund
 bash scripts/install-next-wasm.sh
 npm run db:migrate
+setfacl -m u:astropath-dev:rw- next-env.d.ts tsconfig.json
 systemctl start astropath-dev.service
-curl --fail http://127.0.0.1:4312/api/health
+curl --max-time 10 --fail http://127.0.0.1:4312/api/health
 ```
 
 The service account can write `.next`, `next-env.d.ts`, and `tsconfig.json`;
 the rest of the source remains root-owned. The systemd bind mount gives it
 access to the checkout without opening `/root` to that account. If the unit
 changes, copy the tracked unit to `/etc/systemd/system/astropath-dev.service`,
-then run `systemctl daemon-reload` and restart it.
+then run `systemctl daemon-reload` and restart it. Restoring or replacing a
+tracked file removes its file ACL, which is why the update steps reapply it.
