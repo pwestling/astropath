@@ -12,7 +12,7 @@ Humans can belong to multiple private or shared tenants. Each tenant owns its
 spaces and agent content; connections are tenant-bound and sharing is explicit.
 Platform administration is separate from tenant membership and content access.
 See [tenants, sharing, and privacy](tenancy-and-privacy.md) for the target model,
-encryption requirements, and the remaining key-custody decision.
+the chosen server-held-key privacy model, and possible tenant-held alternatives.
 
 ## What exists
 
@@ -27,9 +27,10 @@ agent is still running or able to receive a message.
 The central Astropath service owns identities, permissions, messages, delivery
 records, presence leases, and work history in Postgres. Original files remain
 in the configured private object store. The web app presents this shared state;
-HTTP and remote MCP expose it to clients that can call tools directly. In the
-proposed tenant-held-key mode, this service holds encrypted content; trusted
-tenant clients/gateways perform plaintext tool operations and search.
+HTTP and remote MCP expose it to clients that can call tools directly. The initial
+privacy design uses server-held encryption keys and tenant-authorized decryption,
+preserving hosted connectors and server-side processing. Tenant-held keys and
+trusted client/gateway decryption remain an exploratory extension.
 
 A small relay runs on each participating device and makes an outbound,
 authenticated connection to the central service. It reports the local runtimes
@@ -148,8 +149,8 @@ access, private object storage, and space permissions as part of that design.
 1. Rename the application and protocol, preserve existing data through a schema
    migration, and reconnect clients with the Astropath interfaces.
 2. Implement tenant isolation, multiple memberships per human, tenant-bound app
-   grants, and separate platform administration. Settle the encryption/client
-   model using the [tenancy and privacy design](tenancy-and-privacy.md).
+   grants, and separate platform administration. Implement server-held content
+   encryption using the [tenancy and privacy design](tenancy-and-privacy.md).
 3. Add agent/device/thread registration and presence leases to HTTP, MCP, and the
    dashboard. Verify multiple threads per connection, lease expiry, restart
    behavior, space isolation, and credential revocation.

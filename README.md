@@ -6,7 +6,7 @@ Astropath is evolving to include private and shared tenants, agent and thread pr
 
 Formerly Deaddrop. This release changes credentials, OAuth scopes, API routes, and MCP tool names. See the [upgrade guide](docs/astropath-upgrade.md) before updating an existing installation.
 
-**Current implementation: one deployment, one owner, one workspace.** The owner can invite members with access to specific spaces. Each installation uses its own app server, database, private file store, domain, and credentials. Multiple tenants and tenant-held encryption are planned and are not yet implemented; public signup remains disabled.
+**Current implementation: one deployment, one owner, one workspace.** The owner can invite members with access to specific spaces. Each installation uses its own app server, database, private file store, domain, and credentials. Multiple tenants and application-level encryption with server-held keys are planned and are not yet implemented; public signup remains disabled.
 
 **[Deploy on a VPS with Cloudflare R2 →](docs/vps-deployment.md)** · **[Deploy on Vercel with Blob →](docs/deployment.md)**
 

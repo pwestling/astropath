@@ -1,9 +1,38 @@
 # Tenants, sharing, and privacy
 
 Status: proposed design, September 28, 2026. The running application still uses
-one workspace per installation. Tenant isolation and tenant-held encryption are
-not implemented. This document updates the target architecture before changing
-authentication and storage.
+one workspace per installation. Tenant isolation and application-level content
+encryption are not implemented. The chosen initial direction is server-held
+keys, with protection against accidental access. Tenant-held keys remain an
+exploratory option, not an implementation requirement.
+
+## Chosen privacy model: server-held keys
+
+Users trust the operator; the goal is to prevent incidental content exposure in
+administration, database inspection, logs, and backups. Keep hosted connectors
+and server-side processing. The application can decrypt authorized content, and
+a determined operator controlling the application and keys can do so too. Do not
+describe this mode as end-to-end encrypted or inaccessible to the operator.
+
+Use envelope encryption with separate tenant data keys, wrapped by a server-held
+key kept outside the content database and its backups. Version keys and ciphertext
+formats so rotation and recovery are possible. Bind ciphertext to its tenant and
+record context with authenticated encryption. Keep key use behind tenant/space
+authorization; encrypting content does not replace those checks. Key storage and
+recovery need deliberate handling; see
+[OWASP's key-management guidance](https://cheatsheetseries.owasp.org/cheatsheets/Key_Management_Cheat_Sheet.html).
+
+The platform-admin UI exposes operational metadata without an inbox for every
+tenant. Exclude content, secrets, and signed URLs from logs and error reports.
+Audit privileged administrative actions. Keep decrypted previews and support
+exports out of routine operational views.
+
+Account for every plaintext derivative: titles, filenames, activity details,
+notification payloads, search indexes, embeddings, and temporary upload files.
+The current SQL full-text index and direct file-transfer path need explicit
+changes before claiming a database or object-store dump hides content. Search
+can remain server-operated, but any retained plaintext index must be separately
+protected or documented as a limitation of the initial storage guarantee.
 
 ## Membership model
 
@@ -61,11 +90,12 @@ attachments. A source identifier in provenance must not grant access or cause
 the destination UI to fetch private source metadata. Idempotency should prevent
 a retried share from creating duplicate copies.
 
-In an encrypted tenant, a trusted client/relay decrypts the source and encrypts
-the selected copy for the destination's authorized recipients. Source ciphertext
-and keys cannot simply be reused across unrelated tenants. A shared copy follows
-the destination tenant's access and retention; deleting the source cannot recall
-copies already received.
+In the chosen server-held-key mode, the authorized service decrypts the source
+and encrypts the selected copy for the destination. In a future tenant-held-key
+mode, a trusted client/relay performs that work. Source ciphertext and keys cannot
+simply be reused across unrelated tenants. A shared copy follows the destination
+tenant's access and retention; deleting the source cannot recall copies already
+received.
 
 Giving one agent both credentials also lets that agent read private material and
 write to the shared tenant. Cryptography cannot prevent an authorized agent from
@@ -99,7 +129,7 @@ checks happen before signing any URL. Old objects can retain their pathnames
 while their metadata is assigned to the original tenant; moving all bytes is
 unnecessary. Already-issued download URLs retain their short expiry.
 
-## What “the operator cannot read it” requires
+## Exploratory alternative: tenant-held keys
 
 For that claim, encrypt content before it reaches Astropath, with decryption
 keys held only by authorized tenant clients/relays. The service stores ciphertext
@@ -131,7 +161,7 @@ claim against an actively malicious operator requires a tenant-controlled client
 or relay and a considered software-update trust model. Running that relay under
 the operator's root account on the same VPS does not create this separation.
 
-## Consequences for existing features
+## Consequences of tenant-held keys for existing features
 
 The current remote MCP server receives and returns plaintext. In a tenant-held
 key design, a trusted client or tenant-operated MCP gateway performs decryption
@@ -146,6 +176,43 @@ encryption is intended to protect. Models chosen by the tenant still receive
 the plaintext provided to them; this protects against the Astropath operator,
 not an authorized AI provider or recipient.
 
+## Where PAKE and agent relays could fit
+
+OPAQUE is a password-authenticated key-exchange protocol described in
+[RFC 9807](https://www.rfc-editor.org/rfc/rfc9807.html). Its client and server
+share an authenticated session secret, while the client also recovers an export
+key unavailable to the server during normal protocol operation. Applications can
+use that export key for protected client data; see
+[the export-key guidance](https://www.rfc-editor.org/rfc/rfc9807.html#section-10.4).
+The shared session secret is not an operator-inaccessible content key. Server
+compromise still permits password-guessing attacks, and trusted client code is
+still required.
+
+One possible design uses client recovery of an encrypted account key, followed
+by access to separately wrapped tenant/space keys. Members do not share a login
+password. Each member/device receives the authorized keys through authenticated
+enrollment. PAKE would address password-based unlocking; invitations, membership
+changes, device enrollment, and group-key distribution remain separate problems.
+
+For unattended agents, a relay could hold an enrolled device key in a protected
+local credential store and decrypt/encrypt through its tools. A human unlocks or
+enrolls it once; it does not require the language model to perform cryptography
+or remember the user's password on each run. The relay's host and update path
+become part of the trusted boundary. PAKE is optional for that design: existing
+device approval or a high-entropy one-time enrollment mechanism could provision
+the device without replacing the application's login protocol.
+
+Do not embed raw keys or recovery secrets in skills, prompts, or agent memory.
+Those are instruction/context distribution surfaces, can be copied into provider
+logs or shared contexts, and are hard to revoke reliably. A skill should identify
+a local relay/profile and its tools. The implementation retrieves the key from
+its credential store without including it in model-visible tool results. The
+agent will still see the plaintext it is authorized to process.
+
+This alternative is feasible, but its major costs are device lifecycle, shared
+tenant membership, revocation/rotation, recovery, client trust, and gateway
+availability. PAKE alone does not remove those costs.
+
 ## Implementation order and acceptance criteria
 
 1. Build tenants, many-to-many memberships, the tenant switcher, tenant-bound
@@ -157,13 +224,13 @@ not an authorized AI provider or recipient.
    existing app credential. Platform-admin status alone must fail content access.
 3. Add deliberate sharing with independent source/destination authorization and
    retry behavior. Include tests for removed membership and partial file uploads.
-4. Decide and implement the key custody/client model before advertising operator-
-   inaccessible content. Validate enrollment, recovery, rotation, sharing, and
-   connector behavior as one complete flow. Existing plaintext data/backups need
-   an explicit migration/retention plan; encryption cannot undo earlier access.
+4. Implement the chosen server-held envelope encryption with key rotation,
+   recovery, and coverage of content derivatives. Existing plaintext data/backups
+   need an explicit migration/retention plan; encryption cannot undo earlier
+   access. Preserve normal hosted connector behavior and state the operator
+   trust boundary accurately.
 5. Apply the same tenant and key boundaries to presence, delivery relays, and the
    progress-note/KB features as they are implemented.
 
-The remaining product choice is whether tenant-operated clients/relays are an
-acceptable requirement for strong content privacy, or whether the first release
-keeps central plaintext connectors and makes the narrower isolation promise.
+Tenant-held keys and PAKE are future exploration. They do not block the initial
+tenant-isolation and server-held-key implementation.
