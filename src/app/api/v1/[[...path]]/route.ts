@@ -47,7 +47,7 @@ async function handle(
         signal: request.signal,
       });
     } else if (
-      path[0] === "drops" &&
+      path[0] === "messages" &&
       path.length === 3 &&
       path[2] === "wait" &&
       method === "POST"
@@ -57,14 +57,14 @@ async function handle(
         .parse(await jsonBody(request));
       result = await chat.waitReply(
         principal,
-        { ...input, drop_id: path[1] },
+        { ...input, message_id: path[1] },
         {
           authenticate: () => apiPrincipal(request, { touch: false }),
           signal: request.signal,
         },
       );
     } else if (
-      path[0] === "drops" &&
+      path[0] === "messages" &&
       path.length === 3 &&
       path[2] === "replies" &&
       method === "POST"
@@ -74,23 +74,23 @@ async function handle(
         .parse(await jsonBody(request));
       result = await chat.reply(principal, {
         ...input,
-        drop_id: path[1],
+        message_id: path[1],
         idempotency_key:
           request.headers.get("idempotency-key") || input.idempotency_key,
       });
       status = 201;
     } else if (
-      path[0] === "drops" &&
+      path[0] === "messages" &&
       path.length === 3 &&
       path[2] === "thread" &&
       method === "GET"
     ) {
       result = await chat.thread(principal, {
-        drop_id: path[1],
+        message_id: path[1],
         page: url.searchParams.get("page") ?? undefined,
         limit: Number(url.searchParams.get("limit") ?? 20),
       });
-    } else if (route === "drops" && method === "GET") {
+    } else if (route === "messages" && method === "GET") {
       result = await store.list(principal, {
         space: url.searchParams.get("space") || undefined,
         q: url.searchParams.get("q") || undefined,
@@ -102,19 +102,19 @@ async function handle(
         limit: Number(url.searchParams.get("limit") || 30),
         cursor: url.searchParams.get("cursor") || undefined,
       });
-    } else if (route === "drops" && method === "POST") {
+    } else if (route === "messages" && method === "POST") {
       result = await store.create(
         principal,
         await jsonBody(request),
         request.headers.get("idempotency-key") || undefined,
       );
       status = 201;
-    } else if (path[0] === "drops" && path.length === 2 && method === "GET")
+    } else if (path[0] === "messages" && path.length === 2 && method === "GET")
       result = await store.detail(principal, path[1]);
-    else if (path[0] === "drops" && path.length === 2 && method === "PATCH")
+    else if (path[0] === "messages" && path.length === 2 && method === "PATCH")
       result = await store.update(principal, path[1], await jsonBody(request));
     else if (
-      path[0] === "drops" &&
+      path[0] === "messages" &&
       path.length === 3 &&
       path[2] === "acknowledge" &&
       method === "POST"
@@ -175,7 +175,7 @@ async function handle(
     else if (route === "overview" && method === "GET")
       result = await overview(principal);
     else if (route === "spaces" && method === "GET") {
-      requireScope(principal, "deaddrop:read");
+      requireScope(principal, "astropath:read");
       result = await listSpaces(principal);
     } else if (route === "spaces" && method === "POST") {
       result = await createSpace(principal, await jsonBody(request));
@@ -189,7 +189,7 @@ async function handle(
     const response = errorResponse(error);
     response.headers.set("Cache-Control", "no-store");
     if (response.status === 401)
-      response.headers.set("WWW-Authenticate", 'Bearer realm="Deaddrop"');
+      response.headers.set("WWW-Authenticate", 'Bearer realm="Astropath"');
     if (response.status === 429) response.headers.set("Retry-After", "60");
     return response;
   }

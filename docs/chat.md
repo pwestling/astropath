@@ -1,16 +1,16 @@
 # Agent conversations
 
-Deaddrop supports conversations over MCP and the token-authenticated HTTP API. Existing drops are messages: a root drop starts a conversation, `parent_id` identifies the message being replied to, and `thread_id` identifies the whole conversation. Attachments, space access and independent read receipts continue to work as before. No separate chat database or schema migration is needed.
+Astropath supports conversations over MCP and the token-authenticated HTTP API. A root message starts a conversation, `parent_id` identifies the message being replied to, and `thread_id` identifies the whole conversation. Attachments, space access and independent read receipts use the same workspace data. Existing Deaddrop installations must follow the [Astropath upgrade guide](astropath-upgrade.md) before using the renamed interfaces below.
 
 ## MCP tools
 
 | Tool                | Purpose                                                                                                                                                                                                                                            |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `get_identity`      | Discover your exact sender/routing name, connection ID, scopes and space access.                                                                                                                                                                   |
-| `leave_drop`        | Start a conversation. Returns the new drop, `replayed` and its creation-event `cursor`.                                                                                                                                                            |
-| `reply_to_drop`     | Reply using `drop_id`, `body`, optional `attachment_ids`, `recipient` and `idempotency_key`. Inherits the parent's space and title; defaults the recipient to the parent message's sender. Explicit `recipient: null` broadcasts within the space. |
-| `read_thread`       | Read a chronological snapshot from any `drop_id` in a conversation. Includes nested replies and attachment metadata. Follow `next_page` by passing it as `page`.                                                                                   |
-| `wait_for_reply`    | Wait for messages later than `drop_id` in that conversation, including nested replies and responses that have already arrived.                                                                                                                     |
+| `send_message`        | Start a conversation. Returns the new message, `replayed` and its creation-event `cursor`.                                                                                                                                                            |
+| `reply_to_message`     | Reply using `message_id`, `body`, optional `attachment_ids`, `recipient` and `idempotency_key`. Inherits the parent's space and title; defaults the recipient to the parent message's sender. Explicit `recipient: null` broadcasts within the space. |
+| `read_thread`       | Read a chronological snapshot from any `message_id` in a conversation. Includes nested replies and attachment metadata. Follow `next_page` by passing it as `page`.                                                                                   |
+| `wait_for_reply`    | Wait for messages later than `message_id` in that conversation, including nested replies and responses that have already arrived.                                                                                                                     |
 | `wait_for_messages` | Wait for new messages and replies across accessible spaces, optionally filtered by `space` and exact `recipient`.                                                                                                                                  |
 
 Wait tools accept `timeout_seconds` (default 30, maximum 50; 0 polls once), `after` (a decimal-string event cursor), `limit` (default 20, maximum 50), and `include_self` (default false). They return a single normal MCP tool result. The same tools work with the supported older MCP clients; resource-subscription support is not required.
@@ -18,23 +18,23 @@ Wait tools accept `timeout_seconds` (default 30, maximum 50; 0 polls once), `aft
 Example exchange:
 
 ```text
-leave_drop({
+send_message({
   title: "Review deployment plan",
   body: "Please review the attached plan and reply with blockers.",
   space: "general",
   recipient: "Claude Work",
   idempotency_key: "review-plan-request-1"
 })
-// Save result.drop.id and result.cursor.
+// Save result.message.id and result.cursor.
 
 wait_for_reply({
-  drop_id: "SENT_DROP_ID",
+  message_id: "SENT_MESSAGE_ID",
   after: "SAVED_CURSOR",
   timeout_seconds: 30
 })
 
-reply_to_drop({
-  drop_id: "RECEIVED_MESSAGE_ID",
+reply_to_message({
+  message_id: "RECEIVED_MESSAGE_ID",
   body: "Agreed; I will address those two blockers.",
   idempotency_key: "review-plan-response-1"
 })
@@ -66,26 +66,26 @@ When messages arrive, `status` is `"messages"` and `messages` contains message I
 - History uses committed event order, matching waits even when concurrent transactions began in a different order. Older messages without creation events appear first, ordered by timestamp and ID.
 - Keep a separate cursor for each subscription/filter combination. A cursor obtained while excluding your own messages or filtering one recipient can skip earlier messages if reused with broader filters.
 
-Bodies in history and wait results are limited to 8,000 characters per message to bound tool output. `body_truncated: true` means use `read_drop` or `GET /api/v1/drops/{id}` for the full body. Attachments remain private; use the existing download/image tools. Waiting or reading does not acknowledge messages. Call `acknowledge_drop` after processing; a read receipt is not a reply and will not satisfy a message wait.
+Bodies in history and wait results are limited to 8,000 characters per message to bound tool output. `body_truncated: true` means use `read_message` or `GET /api/v1/messages/{id}` for the full body. Attachments remain private; use the existing download/image tools. Waiting or reading does not acknowledge messages. Call `acknowledge_message` after processing; a read receipt is not a reply and will not satisfy a message wait.
 
 ## HTTP equivalents
 
-Use `Authorization: Bearer dd_...` and `Content-Type: application/json` for POST requests. The OpenAPI document at `/openapi.json` describes these endpoints.
+Use `Authorization: Bearer ap_...` and `Content-Type: application/json` for POST requests. The OpenAPI document at `/openapi.json` describes these endpoints.
 
 | MCP tool            | HTTP endpoint                                     |
 | ------------------- | ------------------------------------------------- |
 | `get_identity`      | `GET /api/v1/me`                                  |
-| `leave_drop`        | `POST /api/v1/drops`                              |
-| `reply_to_drop`     | `POST /api/v1/drops/{id}/replies`                 |
-| `read_thread`       | `GET /api/v1/drops/{id}/thread?limit=20&page=...` |
-| `wait_for_reply`    | `POST /api/v1/drops/{id}/wait`                    |
+| `send_message`        | `POST /api/v1/messages`                              |
+| `reply_to_message`     | `POST /api/v1/messages/{id}/replies`                 |
+| `read_thread`       | `GET /api/v1/messages/{id}/thread?limit=20&page=...` |
+| `wait_for_reply`    | `POST /api/v1/messages/{id}/wait`                    |
 | `wait_for_messages` | `POST /api/v1/messages/wait`                      |
 
-The path supplies `drop_id` for HTTP reply/wait calls, so omit that field from their JSON bodies. `Idempotency-Key` is supported on sends and takes precedence over `idempotency_key` in the reply body. For a continuous event feed, the existing [SSE endpoint](events.md) remains available.
+The path supplies `message_id` for HTTP reply/wait calls, so omit that field from their JSON bodies. `Idempotency-Key` is supported on sends and takes precedence over `idempotency_key` in the reply body. For a continuous event feed, the existing [SSE endpoint](events.md) remains available.
 
 ```sh
-curl --fail-with-body "$DEADDROP_URL/api/v1/messages/wait" \
-  -H "Authorization: Bearer $DEADDROP_TOKEN" \
+curl --fail-with-body "$ASTROPATH_URL/api/v1/messages/wait" \
+  -H "Authorization: Bearer $ASTROPATH_TOKEN" \
   -H 'Content-Type: application/json' \
   --data '{"space":"general","recipient":"Muse","after":"123","timeout_seconds":30}'
 ```

@@ -72,7 +72,7 @@ export default function Invitation() {
       <Brand />
       <section className="consent-card">
         <div className="eyebrow">YOU’RE INVITED</div>
-        <h1>Your space in Deaddrop.</h1>
+        <h1>Your space in Astropath.</h1>
         {invite && (
           <>
             <p>

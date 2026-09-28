@@ -4,7 +4,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import type { QueryResultRow } from "pg";
 import type { Database } from "../src/lib/db";
-import { DropStore } from "../src/lib/store";
+import { MessageStore } from "../src/lib/store";
 import { ChatStore, waitMessagesInput } from "../src/lib/chat";
 import { AppError } from "../src/lib/errors";
 import type { Principal } from "../src/lib/policy";
@@ -28,14 +28,14 @@ const database: Database = {
       }),
     ),
 };
-const drops = new DropStore(database);
+const messages = new MessageStore(database);
 const chat = new ChatStore(database);
 const alice: Principal = {
   id: "alice",
   name: "Claude",
   owner: false,
   spaces: ["general", "private"],
-  scopes: ["deaddrop:read", "deaddrop:write"],
+  scopes: ["astropath:read", "astropath:write"],
 };
 const bob: Principal = {
   ...alice,
@@ -54,49 +54,49 @@ beforeAll(async () => {
     await readFile(new URL("../src/lib/schema.sql", import.meta.url), "utf8"),
   );
   await database.query(
-    "INSERT INTO dd_spaces(slug,name) VALUES('private','Private')",
+    "INSERT INTO ap_spaces(slug,name) VALUES('private','Private')",
   );
 });
 beforeEach(() =>
   engine.exec(
-    "TRUNCATE dd_events,dd_drops,dd_files,dd_receipts,dd_activity RESTART IDENTITY CASCADE",
+    "TRUNCATE ap_events,ap_messages,ap_files,ap_receipts,ap_activity RESTART IDENTITY CASCADE",
   ),
 );
 afterAll(() => engine.close());
 
 it("replies in the parent's space with the real sender, attachments and stable retry cursor", async () => {
-  const parent = await drops.create(alice, {
+  const parent = await messages.create(alice, {
     title: "Question",
     space: "private",
   });
   const fileId = randomUUID();
   await database.query(
-    "INSERT INTO dd_files(id,space,name,content_type,size,pathname,principal_id,status) VALUES($1::uuid,'private','a.txt','text/plain',1,$1::text,'alice','ready')",
+    "INSERT INTO ap_files(id,space,name,content_type,size,pathname,principal_id,status) VALUES($1::uuid,'private','a.txt','text/plain',1,$1::text,'alice','ready')",
     [fileId],
   );
   const input = {
-    drop_id: parent.drop.id,
+    message_id: parent.message.id,
     body: "Answer",
     attachment_ids: [fileId],
     idempotency_key: "answer-1",
   };
   const answer = await chat.reply(alice, input);
-  expect(answer.drop).toMatchObject({
+  expect(answer.message).toMatchObject({
     space: "private",
-    parent_id: parent.drop.id,
-    thread_id: parent.drop.id,
+    parent_id: parent.message.id,
+    thread_id: parent.message.id,
     sender: "Claude",
     recipient: "Claude",
     title: "Question",
   });
   expect(
-    (await chat.thread(alice, { drop_id: answer.drop.id })).messages[1]
+    (await chat.thread(alice, { message_id: answer.message.id })).messages[1]
       .attachments,
   ).toMatchObject([{ id: fileId, name: "a.txt" }]);
   expect(await chat.reply(alice, input)).toMatchObject({
     replayed: true,
     cursor: answer.cursor,
-    drop: { id: answer.drop.id },
+    message: { id: answer.message.id },
   });
   await expect(
     chat.reply(alice, { ...input, body: "Changed" }),
@@ -111,52 +111,52 @@ it("replies in the parent's space with the real sender, attachments and stable r
 });
 
 it("supports broadcast replies and enforces read-only credentials", async () => {
-  const parent = await drops.create(alice, {
+  const parent = await messages.create(alice, {
     title: "Hello",
     recipient: "Muse",
   });
   const reply = await chat.reply(bob, {
-    drop_id: parent.drop.id,
+    message_id: parent.message.id,
     body: "For everyone",
     recipient: null,
   });
-  expect(reply.drop.recipient).toBeNull();
-  const readOnly = { ...bob, scopes: ["deaddrop:read"] };
+  expect(reply.message.recipient).toBeNull();
+  const readOnly = { ...bob, scopes: ["astropath:read"] };
   await expect(
-    chat.reply(readOnly, { drop_id: parent.drop.id, body: "Denied" }),
+    chat.reply(readOnly, { message_id: parent.message.id, body: "Denied" }),
   ).rejects.toMatchObject({ status: 403 });
   expect(
-    (await chat.thread(readOnly, { drop_id: parent.drop.id })).messages,
+    (await chat.thread(readOnly, { message_id: parent.message.id })).messages,
   ).toHaveLength(2);
 });
 
 it("wait_for_reply catches fast replies and nested conversation turns but ignores receipts and own messages", async () => {
-  const sent = await drops.create(alice, { title: "Question" });
-  await drops.acknowledge(bob, sent.drop.id);
-  await chat.reply(alice, { drop_id: sent.drop.id, body: "My clarification" });
+  const sent = await messages.create(alice, { title: "Question" });
+  await messages.acknowledge(bob, sent.message.id);
+  await chat.reply(alice, { message_id: sent.message.id, body: "My clarification" });
   const fast = await chat.reply(bob, {
-    drop_id: sent.drop.id,
+    message_id: sent.message.id,
     body: "Fast answer",
   });
   const nested = await chat.reply(bob, {
-    drop_id: fast.drop.id,
+    message_id: fast.message.id,
     body: "More detail",
   });
   const result = await chat.waitReply(
     alice,
-    { drop_id: sent.drop.id, timeout_seconds: 0 },
+    { message_id: sent.message.id, timeout_seconds: 0 },
     context(alice),
   );
   expect(result.messages.map((m) => m.id)).toEqual([
-    fast.drop.id,
-    nested.drop.id,
+    fast.message.id,
+    nested.message.id,
   ]);
   expect(result.status).toBe("messages");
   expect(
     (
       await chat.waitReply(
         alice,
-        { drop_id: sent.drop.id, after: result.cursor, timeout_seconds: 0 },
+        { message_id: sent.message.id, after: result.cursor, timeout_seconds: 0 },
         context(alice),
       )
     ).status,
@@ -165,39 +165,39 @@ it("wait_for_reply catches fast replies and nested conversation turns but ignore
     (
       await chat.waitReply(
         alice,
-        { drop_id: fast.drop.id, after: "0", timeout_seconds: 0 },
+        { message_id: fast.message.id, after: "0", timeout_seconds: 0 },
         context(alice),
       )
     ).messages.map((m) => m.id),
-  ).toEqual([nested.drop.id]);
+  ).toEqual([nested.message.id]);
 });
 
 it("combines space and exact recipient filters, includes replies, and never crosses space permissions", async () => {
-  const root = await drops.create(alice, {
+  const root = await messages.create(alice, {
     title: "To Muse",
     recipient: "Muse",
   });
   const reply = await chat.reply(alice, {
-    drop_id: root.drop.id,
+    message_id: root.message.id,
     body: "Followup",
     recipient: "Muse",
   });
-  await drops.create(alice, {
+  await messages.create(alice, {
     title: "Private",
     space: "private",
     recipient: "Muse",
   });
-  await drops.create(alice, { title: "Different case", recipient: "muse" });
-  await drops.create(alice, { title: "Broadcast" });
-  await drops.create(bob, { title: "Self", recipient: "Muse" });
+  await messages.create(alice, { title: "Different case", recipient: "muse" });
+  await messages.create(alice, { title: "Broadcast" });
+  await messages.create(bob, { title: "Self", recipient: "Muse" });
   const result = await chat.waitMessages(
     bob,
     { space: "general", recipient: "Muse", after: "0", timeout_seconds: 0 },
     context(),
   );
   expect(result.messages.map((m) => m.id)).toEqual([
-    root.drop.id,
-    reply.drop.id,
+    root.message.id,
+    reply.message.id,
   ]);
   expect(result.cursor).toBe("6");
   expect(
@@ -220,7 +220,7 @@ it("combines space and exact recipient filters, includes replies, and never cros
 });
 
 it("starts live unless a cursor is supplied and returns immediately on a zero timeout", async () => {
-  await drops.create(alice, { title: "Already here" });
+  await messages.create(alice, { title: "Already here" });
   const result = await chat.waitMessages(
     bob,
     { timeout_seconds: 0 },
@@ -262,7 +262,7 @@ it("delivers messages arriving during a wait and stops authenticating after retu
     {
       ...context(),
       authenticate: async () => {
-        if (++calls === 2) await drops.create(alice, { title: "Live" });
+        if (++calls === 2) await messages.create(alice, { title: "Live" });
         return bob;
       },
     },
@@ -298,7 +298,7 @@ it("checks revocation, identity, scopes and membership during an idle wait", asy
           ...context(),
           authenticate: async () => {
             if (++calls === 1) return bob;
-            await drops.create(alice, { title: "Must not disclose" });
+            await messages.create(alice, { title: "Must not disclose" });
             if (loss === "revoked")
               throw new AppError(401, "invalid_token", "Revoked");
             return {
@@ -339,13 +339,13 @@ it("cancels promptly instead of continuing database polls after disconnect", asy
 
 it("paginates matching events without gaps, preserves bigint IDs and truncates large bodies explicitly", async () => {
   await database.query(
-    "SELECT setval(pg_get_serial_sequence('dd_events','id'),9007199254740993,true)",
+    "SELECT setval(pg_get_serial_sequence('ap_events','id'),9007199254740993,true)",
   );
-  const first = await drops.create(alice, {
+  const first = await messages.create(alice, {
     title: "One",
     body: "x".repeat(9000),
   });
-  const second = await drops.create(alice, { title: "Two" });
+  const second = await messages.create(alice, { title: "Two" });
   const a = await chat.waitMessages(
     bob,
     { after: "0", limit: 1, timeout_seconds: 0 },
@@ -359,112 +359,112 @@ it("paginates matching events without gaps, preserves bigint IDs and truncates l
     { after: a.cursor, limit: 1, timeout_seconds: 0 },
     context(),
   );
-  expect(b.messages.map((m) => m.id)).toEqual([second.drop.id]);
+  expect(b.messages.map((m) => m.id)).toEqual([second.message.id]);
   expect(b.cursor).toBe(second.cursor);
   expect(b.has_more).toBe(false);
 });
 
 it("reads a stable paginated conversation snapshot and hands off new messages to waiting", async () => {
-  const root = await drops.create(alice, { title: "Conversation" });
+  const root = await messages.create(alice, { title: "Conversation" });
   const second = await chat.reply(bob, {
-    drop_id: root.drop.id,
+    message_id: root.message.id,
     body: "Second",
   });
   const firstPage = await chat.thread(alice, {
-    drop_id: second.drop.id,
+    message_id: second.message.id,
     limit: 1,
   });
-  expect(firstPage.messages[0].id).toBe(root.drop.id);
-  const late = await chat.reply(bob, { drop_id: second.drop.id, body: "Late" });
+  expect(firstPage.messages[0].id).toBe(root.message.id);
+  const late = await chat.reply(bob, { message_id: second.message.id, body: "Late" });
   const next = await chat.thread(alice, {
-    drop_id: root.drop.id,
+    message_id: root.message.id,
     limit: 1,
     page: firstPage.next_page,
   });
-  expect(next.messages.map((m) => m.id)).toEqual([second.drop.id]);
+  expect(next.messages.map((m) => m.id)).toEqual([second.message.id]);
   expect(next.cursor).toBe(firstPage.cursor);
   expect(next.next_page).toBeNull();
   const fresh = await chat.waitReply(
     alice,
-    { drop_id: root.drop.id, after: next.cursor, timeout_seconds: 0 },
+    { message_id: root.message.id, after: next.cursor, timeout_seconds: 0 },
     context(alice),
   );
-  expect(fresh.messages.map((m) => m.id)).toEqual([late.drop.id]);
-  const other = await drops.create(alice, { title: "Other" });
+  expect(fresh.messages.map((m) => m.id)).toEqual([late.message.id]);
+  const other = await messages.create(alice, { title: "Other" });
   await expect(
-    chat.thread(alice, { drop_id: other.drop.id, page: firstPage.next_page }),
+    chat.thread(alice, { message_id: other.message.id, page: firstPage.next_page }),
   ).rejects.toMatchObject({ status: 400 });
   await expect(
-    chat.thread(alice, { drop_id: root.drop.id, page: "bad" }),
+    chat.thread(alice, { message_id: root.message.id, page: "bad" }),
   ).rejects.toMatchObject({ status: 400 });
 });
 
 it("includes pre-event history and can wait on an old conversation without a creation event", async () => {
-  const root = await drops.create(alice, { title: "Legacy" });
-  await database.query("DELETE FROM dd_events WHERE drop_id=$1", [
-    root.drop.id,
+  const root = await messages.create(alice, { title: "Legacy" });
+  await database.query("DELETE FROM ap_events WHERE message_id=$1", [
+    root.message.id,
   ]);
   const reply = await chat.reply(bob, {
-    drop_id: root.drop.id,
+    message_id: root.message.id,
     body: "New reply",
   });
   expect(
-    (await chat.thread(alice, { drop_id: root.drop.id })).messages,
+    (await chat.thread(alice, { message_id: root.message.id })).messages,
   ).toHaveLength(2);
   expect(
     (
       await chat.waitReply(
         alice,
-        { drop_id: root.drop.id, timeout_seconds: 0 },
+        { message_id: root.message.id, timeout_seconds: 0 },
         context(alice),
       )
     ).messages[0].id,
-  ).toBe(reply.drop.id);
+  ).toBe(reply.message.id);
 });
 
 it("orders committed conversation messages consistently with the event cursor, even with overlapping transaction timestamps", async () => {
-  const root = await drops.create(alice, { title: "Root" });
+  const root = await messages.create(alice, { title: "Root" });
   const first = await chat.reply(bob, {
-    drop_id: root.drop.id,
+    message_id: root.message.id,
     body: "First committed reply",
   });
   const second = await chat.reply(bob, {
-    drop_id: first.drop.id,
+    message_id: first.message.id,
     body: "Later commit, earlier transaction",
   });
   await database.query(
-    "UPDATE dd_drops SET created_at='2020-01-01' WHERE id=$1",
-    [second.drop.id],
+    "UPDATE ap_messages SET created_at='2020-01-01' WHERE id=$1",
+    [second.message.id],
   );
-  const a = await chat.thread(alice, { drop_id: root.drop.id, limit: 1 });
+  const a = await chat.thread(alice, { message_id: root.message.id, limit: 1 });
   const b = await chat.thread(alice, {
-    drop_id: root.drop.id,
+    message_id: root.message.id,
     limit: 1,
     page: a.next_page,
   });
   const c = await chat.thread(alice, {
-    drop_id: root.drop.id,
+    message_id: root.message.id,
     limit: 1,
     page: b.next_page,
   });
   expect([a.messages[0].id, b.messages[0].id, c.messages[0].id]).toEqual([
-    root.drop.id,
-    first.drop.id,
-    second.drop.id,
+    root.message.id,
+    first.message.id,
+    second.message.id,
   ]);
   expect(c.next_page).toBeNull();
   // Historical rows without creation events sort first and paginate into the event-backed rows.
-  await database.query("DELETE FROM dd_events WHERE drop_id=$1", [
-    root.drop.id,
+  await database.query("DELETE FROM ap_events WHERE message_id=$1", [
+    root.message.id,
   ]);
-  const legacy = await chat.thread(alice, { drop_id: root.drop.id, limit: 1 });
-  expect(legacy.messages[0].id).toBe(root.drop.id);
+  const legacy = await chat.thread(alice, { message_id: root.message.id, limit: 1 });
+  expect(legacy.messages[0].id).toBe(root.message.id);
   expect(
     (
       await chat.thread(alice, {
-        drop_id: root.drop.id,
+        message_id: root.message.id,
         page: legacy.next_page,
       })
     ).messages.map((m) => m.id),
-  ).toEqual([first.drop.id, second.drop.id]);
+  ).toEqual([first.message.id, second.message.id]);
 });

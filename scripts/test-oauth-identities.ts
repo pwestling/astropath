@@ -95,7 +95,7 @@ async function main() {
       client_id: clientId,
       redirect_uri: redirectUri,
       response_type: "code",
-      scope: "openid offline_access deaddrop:read deaddrop:write",
+      scope: "openid offline_access astropath:read astropath:write",
       resource: `${base}/mcp`,
       code_challenge: createHash("sha256").update(verifier).digest("base64url"),
       code_challenge_method: "S256",
@@ -139,7 +139,7 @@ async function main() {
   const first = await begin();
   // Keep a valid approval URL for optional browser verification without issuing a token.
   console.log("Approval page is ready; OAuth regression started.");
-  const before = await pool.query("SELECT count(*) FROM dd_connections");
+  const before = await pool.query("SELECT count(*) FROM ap_connections");
   await post(
     "/api/auth/oauth2/consent",
     { accept: true, oauth_query: first.query },
@@ -150,7 +150,7 @@ async function main() {
     {
       accept: true,
       identity_name: `Tampered ${suffix}`,
-      oauth_query: `${first.query}&scope=deaddrop:write`,
+      oauth_query: `${first.query}&scope=astropath:write`,
     },
     400,
   );
@@ -166,7 +166,7 @@ async function main() {
     oauth_query: rejected.query,
   });
   assert.equal(
-    (await pool.query("SELECT count(*) FROM dd_connections")).rows[0].count,
+    (await pool.query("SELECT count(*) FROM ap_connections")).rows[0].count,
     before.rows[0].count,
   );
   console.log(
@@ -251,7 +251,7 @@ async function main() {
       }),
     );
     const note = await client.callTool({
-      name: "leave_drop",
+      name: "send_message",
       arguments: {
         title: "Named identity regression",
         body: "Test on isolated database branch.",
@@ -260,7 +260,7 @@ async function main() {
     });
     assert.notEqual(note.isError, true);
     const stored = await pool.query(
-      "SELECT sender,principal_id,recipient FROM dd_drops WHERE principal_id=$1",
+      "SELECT sender,principal_id,recipient FROM ap_messages WHERE principal_id=$1",
       [idA],
     );
     assert.equal(stored.rows[0].sender, firstName);
@@ -272,7 +272,7 @@ async function main() {
     "PASS: token refresh retains identity, authenticated MCP sends with the chosen name, and future recipients still work.",
   );
 
-  await pool.query("UPDATE dd_connections SET revoked_at=now() WHERE id=$1", [
+  await pool.query("UPDATE ap_connections SET revoked_at=now() WHERE id=$1", [
     idA,
   ]);
   await assert.rejects(
@@ -300,7 +300,7 @@ async function main() {
   const legacy = await oauthPrincipal({
     sub: decodeJwt(tokenB.access_token).sub,
     client_id: `legacy-${suffix}`,
-    scope: "deaddrop:read",
+    scope: "astropath:read",
   });
   assert.ok(legacy.id);
   assert.equal(legacy.owner, false);

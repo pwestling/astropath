@@ -12,7 +12,7 @@ import { APIError } from "better-auth/api";
 export function createAuth(bootstrap = false) {
   const base = appUrl();
   return betterAuth({
-    appName: "Deaddrop",
+    appName: "Astropath",
     baseURL: base,
     secret: process.env.BETTER_AUTH_SECRET,
     database: pool,

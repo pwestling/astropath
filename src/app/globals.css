@@ -584,7 +584,7 @@ small {
   color: #64725b;
 }
 .list-heading,
-.drop-row {
+.message-row {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) 180px 85px 30px;
   gap: 15px;
@@ -601,19 +601,19 @@ small {
   color: #676f5f;
   letter-spacing: 1px;
 }
-.drop-row {
+.message-row {
   min-height: 100px;
   align-items: center;
   border-bottom: 1px solid #edf0e8;
   transition: background 0.15s;
 }
-.drop-row:hover {
+.message-row:hover {
   background: #fcfdfb;
 }
-.drop-row.unread {
+.message-row.unread {
   background: #fdfefb;
 }
-.drop-main {
+.message-main {
   display: flex;
   align-items: center;
   gap: 14px;
@@ -637,20 +637,20 @@ small {
   border-color: #e2e9eb;
   color: #5e7078;
 }
-.drop-text {
+.message-text {
   display: flex;
   flex-direction: column;
   min-width: 0;
   gap: 6px;
 }
-.drop-text > strong {
+.message-text > strong {
   font-size: 12px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.drop-text > span:nth-child(2) {
+.message-text > span:nth-child(2) {
   font-size: 11px;
   color: #686d60;
   overflow: hidden;
@@ -666,13 +666,13 @@ small {
   margin-left: 9px;
   vertical-align: middle;
 }
-.drop-tags {
+.message-tags {
   display: flex;
   align-items: center;
   gap: 7px;
   min-height: 13px;
 }
-.drop-tags em {
+.message-tags em {
   font-size: 9px;
   font-style: normal;
   color: #656f5a;
@@ -681,14 +681,14 @@ small {
   padding: 1px 5px;
   border-radius: 3px;
 }
-.drop-tags small {
+.message-tags small {
   display: flex;
   align-items: center;
   gap: 3px;
   font-size: 9px;
   color: #696f61;
 }
-.drop-origin {
+.message-origin {
   display: flex;
   flex-direction: column;
   gap: 9px;
@@ -712,7 +712,7 @@ small {
   background: #edece4;
   color: #736c57;
 }
-.drop-origin small {
+.message-origin small {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -722,7 +722,7 @@ small {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.drop-row > time {
+.message-row > time {
   font-size: 10px;
   color: #686e60;
 }
@@ -1711,7 +1711,7 @@ small {
   .empty-state {
     min-height: 390px;
   }
-  .drop-row {
+  .message-row {
     min-height: 110px;
   }
 }
@@ -1730,7 +1730,7 @@ small {
     padding: 0 25px;
   }
   .list-heading,
-  .drop-row {
+  .message-row {
     grid-template-columns: minmax(185px, 1fr) 135px 62px 25px;
     gap: 10px;
   }
@@ -1747,7 +1747,7 @@ small {
   .list-tools select {
     width: 105px;
   }
-  .drop-origin small {
+  .message-origin small {
     font-size: 8px;
   }
   .auth-story {
@@ -1809,14 +1809,14 @@ small {
     line-height: 1.6;
   }
   .list-heading,
-  .drop-row {
+  .message-row {
     grid-template-columns: minmax(150px, 1fr) 110px 25px;
   }
   .list-heading > span:nth-child(3),
-  .drop-row > time {
+  .message-row > time {
     display: none;
   }
-  .drop-text > strong {
+  .message-text > strong {
     font-size: 11px;
   }
   .auth-hero h1 {
@@ -1917,20 +1917,20 @@ small {
     min-height: 22px;
   }
   .list-heading,
-  .drop-row {
+  .message-row {
     grid-template-columns: minmax(140px, 1fr) 24px;
     padding-left: 14px;
     padding-right: 11px;
     gap: 8px;
   }
   .list-heading > span:nth-child(2),
-  .drop-origin {
+  .message-origin {
     display: none;
   }
-  .drop-main {
+  .message-main {
     gap: 10px;
   }
-  .drop-text > strong {
+  .message-text > strong {
     font-size: 12px;
   }
   .file-icon {

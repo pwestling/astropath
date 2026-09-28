@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import type { QueryResultRow } from "pg";
-import { DropStore, decodeCursor } from "../src/lib/store";
+import { MessageStore, decodeCursor } from "../src/lib/store";
 import { mintToken, hash, type Principal } from "../src/lib/policy";
 import type { Database, Queryable } from "../src/lib/db";
 import { fileInput } from "../src/lib/validation";
@@ -35,33 +35,33 @@ const database: Database = {
       }),
     ),
 };
-const store = new DropStore(database);
+const store = new MessageStore(database);
 const writer: Principal = {
   id: "writer",
   name: "Muse",
   owner: false,
-  scopes: ["deaddrop:read", "deaddrop:write"],
+  scopes: ["astropath:read", "astropath:write"],
   spaces: ["general"],
 };
 const reader: Principal = {
   id: "reader",
   name: "Claude",
   owner: false,
-  scopes: ["deaddrop:read"],
+  scopes: ["astropath:read"],
   spaces: ["general"],
 };
 const owner: Principal = {
   id: "owner:test",
   name: "Porter",
   owner: true,
-  scopes: ["deaddrop:read", "deaddrop:write"],
+  scopes: ["astropath:read", "astropath:write"],
   spaces: null,
 };
 beforeAll(async () => {
   await engine.exec(
     await readFile(new URL("../src/lib/schema.sql", import.meta.url), "utf8"),
   );
-  await query("INSERT INTO dd_spaces(slug,name) VALUES('private','Private')");
+  await query("INSERT INTO ap_spaces(slug,name) VALUES('private','Private')");
 });
 afterAll(() => engine.close());
 
@@ -70,12 +70,12 @@ describe("durable handoffs and permissions", () => {
     await expect(
       store.create(writer, { title: "spoof", sender: "Porter" }),
     ).rejects.toThrow();
-    const { drop } = await store.create(writer, {
+    const { message } = await store.create(writer, {
       title: "Real handoff",
       body: "Original context",
     });
-    expect(drop.sender).toBe("Muse");
-    expect(drop.principal_id).toBe("writer");
+    expect(message.sender).toBe("Muse");
+    expect(message.principal_id).toBe("writer");
   });
   it("replays an identical key but rejects a different payload", async () => {
     const a = await store.create(
@@ -88,7 +88,7 @@ describe("durable handoffs and permissions", () => {
       { title: "One delivery" },
       "retry-key",
     );
-    expect(b.drop.id).toBe(a.drop.id);
+    expect(b.message.id).toBe(a.message.id);
     expect(b.replayed).toBe(true);
     await expect(
       store.create(writer, { title: "Different" }, "retry-key"),
@@ -98,41 +98,41 @@ describe("durable handoffs and permissions", () => {
     await expect(
       store.create(reader, { title: "Unauthorized" }),
     ).rejects.toMatchObject({ status: 403 });
-    const { drop } = await store.create(owner, {
+    const { message } = await store.create(owner, {
       title: "Private",
       space: "private",
     });
-    await expect(store.get(reader, drop.id)).rejects.toMatchObject({
+    await expect(store.get(reader, message.id)).rejects.toMatchObject({
       status: 404,
     });
     await expect(
       store.create(writer, { title: "Cross-space", space: "private" }),
     ).rejects.toMatchObject({ status: 404 });
     expect(
-      (await store.list(reader, {})).drops.some((d) => d.id === drop.id),
+      (await store.list(reader, {})).messages.some((d) => d.id === message.id),
     ).toBe(false);
   });
   it("keeps receipts independent and reads non-destructive", async () => {
-    const { drop } = await store.create(writer, { title: "Read receipt" });
-    await store.detail(reader, drop.id);
+    const { message } = await store.create(writer, { title: "Read receipt" });
+    await store.detail(reader, message.id);
     expect(
-      (await store.list(reader, { unread: true })).drops.some(
-        (d) => d.id === drop.id,
+      (await store.list(reader, { unread: true })).messages.some(
+        (d) => d.id === message.id,
       ),
     ).toBe(true);
-    await store.acknowledge(reader, drop.id);
+    await store.acknowledge(reader, message.id);
     expect(
-      (await store.list(reader, { unread: true })).drops.some(
-        (d) => d.id === drop.id,
+      (await store.list(reader, { unread: true })).messages.some(
+        (d) => d.id === message.id,
       ),
     ).toBe(false);
     expect(
-      (await store.list(owner, { unread: true })).drops.some(
-        (d) => d.id === drop.id,
+      (await store.list(owner, { unread: true })).messages.some(
+        (d) => d.id === message.id,
       ),
     ).toBe(true);
   });
-  it("paginates without duplicate drops", async () => {
+  it("paginates without duplicate messages", async () => {
     const first = await store.list(owner, { limit: 2 });
     expect(first.next_cursor).toBeTruthy();
     const second = await store.list(owner, {
@@ -140,7 +140,7 @@ describe("durable handoffs and permissions", () => {
       cursor: first.next_cursor!,
     });
     expect(
-      second.drops.every((d) => !first.drops.some((a) => a.id === d.id)),
+      second.messages.every((d) => !first.messages.some((a) => a.id === d.id)),
     ).toBe(true);
     expect(() => decodeCursor("invalid")).toThrow("pagination cursor");
   });
@@ -148,30 +148,30 @@ describe("durable handoffs and permissions", () => {
     const parent = await store.create(writer, { title: "Parent" });
     const child = await store.create(writer, {
       title: "Reply",
-      parent_id: parent.drop.id,
+      parent_id: parent.message.id,
     });
-    expect(child.drop.thread_id).toBe(parent.drop.id);
-    expect((await store.detail(reader, parent.drop.id)).replies).toHaveLength(
+    expect(child.message.thread_id).toBe(parent.message.id);
+    expect((await store.detail(reader, parent.message.id)).replies).toHaveLength(
       1,
     );
     await expect(
       store.create(owner, {
         title: "Cross-space reply",
         space: "private",
-        parent_id: parent.drop.id,
+        parent_id: parent.message.id,
       }),
     ).rejects.toMatchObject({ status: 404 });
   });
   it("preserves microseconds and ID ordering across pagination boundaries", async () => {
     const ids: string[] = [];
     for (const fractional of ["123456", "123456", "123789"]) {
-      const { drop } = await store.create(writer, {
+      const { message } = await store.create(writer, {
         title: "Microsecond boundary",
       });
-      ids.push(drop.id);
+      ids.push(message.id);
       await query(
-        "UPDATE dd_drops SET created_at=$1::timestamptz WHERE id=$2",
-        [`2026-09-13T10:00:00.${fractional}Z`, drop.id],
+        "UPDATE ap_messages SET created_at=$1::timestamptz WHERE id=$2",
+        [`2026-09-13T10:00:00.${fractional}Z`, message.id],
       );
     }
     const seen: string[] = [];
@@ -182,8 +182,8 @@ describe("durable handoffs and permissions", () => {
         limit: 1,
         cursor,
       });
-      expect(result.drops).toHaveLength(1);
-      seen.push(result.drops[0].id);
+      expect(result.messages).toHaveLength(1);
+      seen.push(result.messages[0].id);
       cursor = result.next_cursor || undefined;
     }
     expect(seen.sort()).toEqual(ids.sort());
@@ -192,33 +192,33 @@ describe("durable handoffs and permissions", () => {
   it("attaches only the uploader’s ready files atomically", async () => {
     const id = randomUUID();
     await query(
-      "INSERT INTO dd_files(id,space,name,content_type,size,pathname,principal_id) VALUES($1,'general','image.png','image/png',12,$2,'writer')",
+      "INSERT INTO ap_files(id,space,name,content_type,size,pathname,principal_id) VALUES($1,'general','image.png','image/png',12,$2,'writer')",
       [id, `test/${id}`],
     );
     await expect(
       store.create(writer, { title: "Pending file", attachment_ids: [id] }),
     ).rejects.toMatchObject({ status: 409 });
-    await query("UPDATE dd_files SET status='ready' WHERE id=$1", [id]);
+    await query("UPDATE ap_files SET status='ready' WHERE id=$1", [id]);
     await expect(
       store.create(owner, {
         title: "Someone else’s upload",
         attachment_ids: [id],
       }),
     ).rejects.toMatchObject({ status: 409 });
-    const { drop } = await store.create(writer, {
+    const { message } = await store.create(writer, {
       title: "Image attached",
       attachment_ids: [id],
     });
-    expect((await store.detail(reader, drop.id)).attachments[0].id).toBe(id);
+    expect((await store.detail(reader, message.id)).attachments[0].id).toBe(id);
     await store.create(writer, { title: "Newer note without attachments" });
     const filtered = await store.list(reader, { with_files: true, limit: 1 });
-    expect(filtered.drops[0].id).toBe(drop.id);
+    expect(filtered.messages[0].id).toBe(message.id);
     expect(filtered.next_cursor).toBeNull();
     await expect(
       store.create(writer, { title: "Reuse", attachment_ids: [id] }),
     ).rejects.toMatchObject({ status: 409 });
     const orphan = await query(
-      "SELECT id FROM dd_drops WHERE title=ANY($1::text[])",
+      "SELECT id FROM ap_messages WHERE title=ANY($1::text[])",
       [["Pending file", "Someone else’s upload", "Reuse"]],
     );
     expect(orphan.rows).toHaveLength(0);
@@ -226,21 +226,21 @@ describe("durable handoffs and permissions", () => {
   it("hides unattached uploads from other connections", async () => {
     const id = randomUUID();
     await query(
-      "INSERT INTO dd_files(id,space,name,content_type,size,pathname,principal_id) VALUES($1,'general','a.txt','text/plain',1,$2,'writer')",
+      "INSERT INTO ap_files(id,space,name,content_type,size,pathname,principal_id) VALUES($1,'general','a.txt','text/plain',1,$2,'writer')",
       [id, `test/${id}`],
     );
     await expect(store.file(reader, id)).rejects.toMatchObject({ status: 404 });
     expect((await store.file(writer, id)).id).toBe(id);
   });
   it("restricts archive and star controls to the owner", async () => {
-    const { drop } = await store.create(writer, { title: "Organize" });
+    const { message } = await store.create(writer, { title: "Organize" });
     await expect(
-      store.update(writer, drop.id, { archived: true }),
+      store.update(writer, message.id, { archived: true }),
     ).rejects.toMatchObject({ status: 403 });
-    await store.update(owner, drop.id, { archived: true, pinned: true });
+    await store.update(owner, message.id, { archived: true, pinned: true });
     expect(
-      (await store.list(owner, { archived: true })).drops.some(
-        (d) => d.id === drop.id,
+      (await store.list(owner, { archived: true })).messages.some(
+        (d) => d.id === message.id,
       ),
     ).toBe(true);
   });

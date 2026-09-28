@@ -3,7 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import type { QueryResultRow } from "pg";
 import type { Database } from "../src/lib/db";
-import { DropStore } from "../src/lib/store";
+import { MessageStore } from "../src/lib/store";
 import { EventStore, eventSubscription } from "../src/lib/events";
 import { eventResponse } from "../src/lib/event-stream";
 import { AppError } from "../src/lib/errors";
@@ -28,7 +28,7 @@ const database: Database = {
       }),
     ),
 };
-const drops = new DropStore(database);
+const messages = new MessageStore(database);
 const events = new EventStore(database);
 const owner: Principal = {
   id: "owner:test",
@@ -36,14 +36,14 @@ const owner: Principal = {
   owner: true,
   name: "Owner",
   spaces: null,
-  scopes: ["deaddrop:read", "deaddrop:write"],
+  scopes: ["astropath:read", "astropath:write"],
 };
 const reader: Principal = {
   id: "reader",
   owner: false,
   name: "Muse",
   spaces: ["general"],
-  scopes: ["deaddrop:read"],
+  scopes: ["astropath:read"],
 };
 beforeAll(async () => {
   const schema = await readFile(
@@ -53,12 +53,12 @@ beforeAll(async () => {
   await engine.exec(schema);
   await engine.exec(schema);
   await database.query(
-    "INSERT INTO dd_spaces(slug,name) VALUES('private','Private')",
+    "INSERT INTO ap_spaces(slug,name) VALUES('private','Private')",
   );
 });
 beforeEach(() =>
   engine.exec(
-    "TRUNCATE dd_events,dd_drops,dd_files,dd_receipts,dd_activity RESTART IDENTITY CASCADE",
+    "TRUNCATE ap_events,ap_messages,ap_files,ap_receipts,ap_activity RESTART IDENTITY CASCADE",
   ),
 );
 afterAll(() => engine.close());
@@ -69,19 +69,19 @@ it("publishes committed changes exactly once for idempotent creation and acknowl
     body: "Not in notifications",
     recipient: "Muse",
   };
-  const { drop } = await drops.create(owner, input, "retry-key");
-  await drops.create(owner, input, "retry-key");
-  await drops.acknowledge(reader, drop.id);
-  await drops.acknowledge(reader, drop.id);
-  await drops.update(owner, drop.id, { pinned: true, archived: true });
+  const { message } = await messages.create(owner, input, "retry-key");
+  await messages.create(owner, input, "retry-key");
+  await messages.acknowledge(reader, message.id);
+  await messages.acknowledge(reader, message.id);
+  await messages.update(owner, message.id, { pinned: true, archived: true });
   const batch = await events.read(reader, {}, "0");
   expect(batch.events.map((event) => event.type)).toEqual([
-    "drop.created",
-    "drop.acknowledged",
-    "drop.updated",
+    "message.created",
+    "message.acknowledged",
+    "message.updated",
   ]);
   expect(batch.events[0]).toMatchObject({
-    drop_id: drop.id,
+    message_id: message.id,
     recipient: "Muse",
     data: { title: "Hello", attachment_ids: [] },
   });
@@ -89,14 +89,14 @@ it("publishes committed changes exactly once for idempotent creation and acknowl
   expect(JSON.stringify(batch)).not.toContain("Not in notifications");
 });
 
-it("rolls back the drop when its notification cannot be stored", async () => {
-  const failing = new DropStore({
+it("rolls back the message when its notification cannot be stored", async () => {
+  const failing = new MessageStore({
     ...database,
     transaction: (fn) =>
       database.transaction((tx) =>
         fn({
           query: async (sql, values) => {
-            if (sql.includes("INSERT INTO dd_events"))
+            if (sql.includes("INSERT INTO ap_events"))
               throw new Error("Event write failed");
             return tx.query(sql, values);
           },
@@ -106,37 +106,37 @@ it("rolls back the drop when its notification cannot be stored", async () => {
   await expect(failing.create(owner, { title: "Rolled back" })).rejects.toThrow(
     "Event write failed",
   );
-  expect((await database.query("SELECT id FROM dd_drops")).rows).toHaveLength(
+  expect((await database.query("SELECT id FROM ap_messages")).rows).toHaveLength(
     0,
   );
   expect(await events.latest()).toBe("0");
 });
 
 it("combines exact recipient filtering with space access, including replies", async () => {
-  const { drop } = await drops.create(owner, {
+  const { message } = await messages.create(owner, {
     title: "To Muse",
     recipient: "Muse",
   });
-  const reply = await drops.create(owner, {
+  const reply = await messages.create(owner, {
     title: "Reply",
-    parent_id: drop.id,
+    parent_id: message.id,
     recipient: "Muse",
   });
-  await drops.create(owner, { title: "Broadcast" });
-  await drops.create(owner, { title: "Different case", recipient: "muse" });
-  await drops.create(owner, {
+  await messages.create(owner, { title: "Broadcast" });
+  await messages.create(owner, { title: "Different case", recipient: "muse" });
+  await messages.create(owner, {
     title: "Private",
     space: "private",
     recipient: "Muse",
   });
   const batch = await events.read(reader, { recipient: "Muse" }, "0");
-  expect(batch.events.map((event) => event.drop_id)).toEqual([
-    drop.id,
-    reply.drop.id,
+  expect(batch.events.map((event) => event.message_id)).toEqual([
+    message.id,
+    reply.message.id,
   ]);
   expect(batch.events[1].data).toMatchObject({
-    parent_id: drop.id,
-    thread_id: drop.id,
+    parent_id: message.id,
+    thread_id: message.id,
   });
   expect(batch.cursor).toBe("5");
   expect((await events.read(reader, {}, "0")).events).toHaveLength(4);
@@ -147,13 +147,13 @@ it("combines exact recipient filtering with space access, including replies", as
     events.validate(owner, { space: "missing" }),
   ).rejects.toMatchObject({ status: 404 });
   await expect(
-    events.read({ ...reader, scopes: ["deaddrop:write"] }, {}, "0"),
+    events.read({ ...reader, scopes: ["astropath:write"] }, {}, "0"),
   ).rejects.toMatchObject({ status: 403 });
 });
 
 it("orders numeric IDs correctly over multiple batches and keeps bigint cursors exact", async () => {
   for (let index = 0; index < 105; index++)
-    await drops.create(owner, { title: `Event ${index}` });
+    await messages.create(owner, { title: `Event ${index}` });
   const first = await events.read(reader, {}, "0");
   expect(first.events.map((event) => event.id)).toEqual(
     Array.from({ length: 100 }, (_, i) => String(i + 1)),
@@ -168,9 +168,9 @@ it("orders numeric IDs correctly over multiple batches and keeps bigint cursors 
     "105",
   ]);
   await database.query(
-    "SELECT setval(pg_get_serial_sequence('dd_events','id'),9007199254740993,true)",
+    "SELECT setval(pg_get_serial_sequence('ap_events','id'),9007199254740993,true)",
   );
-  await drops.create(owner, { title: "Large cursor" });
+  await messages.create(owner, { title: "Large cursor" });
   expect((await events.read(reader, {}, "105")).cursor).toBe(
     "9007199254740994",
   );
@@ -203,15 +203,15 @@ it("validates cursors and prefers Last-Event-ID on reconnect", () => {
 });
 
 it("keeps issued cursors valid after event cleanup and sequence gaps from rolled-back writes", async () => {
-  const first = await drops.create(owner, { title: "Temporary" });
+  const first = await messages.create(owner, { title: "Temporary" });
   const issued = await events.latest();
-  await database.query("DELETE FROM dd_drops WHERE id=$1", [first.drop.id]);
+  await database.query("DELETE FROM ap_messages WHERE id=$1", [first.message.id]);
   expect(await events.latest()).toBe(issued);
   expect(await events.read(reader, {}, issued)).toEqual({
     events: [],
     cursor: issued,
   });
-  const rollback = new DropStore({
+  const rollback = new MessageStore({
     ...database,
     transaction: (fn) =>
       database.transaction(async (tx) => {
@@ -224,13 +224,13 @@ it("keeps issued cursors valid after event cleanup and sequence gaps from rolled
   ).rejects.toThrow("Rollback");
   const gap = await events.latest();
   expect(BigInt(gap)).toBeGreaterThan(BigInt(issued));
-  const next = await drops.create(owner, { title: "Next committed message" });
+  const next = await messages.create(owner, { title: "Next committed message" });
   const batch = await events.read(reader, {}, gap);
-  expect(batch.events.map((event) => event.drop_id)).toEqual([next.drop.id]);
+  expect(batch.events.map((event) => event.message_id)).toEqual([next.message.id]);
 });
 
 it("starts live by default and emits heartbeats and a graceful reconnect", async () => {
-  await drops.create(owner, { title: "Before subscription" });
+  await messages.create(owner, { title: "Before subscription" });
   const response = await eventResponse(
     new Request("http://localhost/events"),
     reader,
@@ -242,7 +242,7 @@ it("starts live by default and emits heartbeats and a graceful reconnect", async
   expect(response.headers.get("cache-control")).toContain("no-store");
   const text = await response.text();
   expect(text).toContain('event: ready\ndata: {"cursor":"1"}');
-  expect(text).not.toContain("drop.created");
+  expect(text).not.toContain("message.created");
   expect(text).toContain(": heartbeat");
   expect(text).toContain("event: reconnect");
   await expect(

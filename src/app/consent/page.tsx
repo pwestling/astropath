@@ -71,7 +71,7 @@ export default function Consent() {
         <h1>
           Let {name} use
           <br />
-          your Deaddrop?
+          your Astropath?
         </h1>
         <p>
           This application will have access only to your allowed spaces
@@ -104,12 +104,12 @@ export default function Consent() {
           </p>
         </form>
         <div className="permission-list">
-          {scopes.includes("deaddrop:read") && (
+          {scopes.includes("astropath:read") && (
             <div>
               <Check size={17} /> Read notes and download attachments
             </div>
           )}
-          {scopes.includes("deaddrop:write") && (
+          {scopes.includes("astropath:write") && (
             <div>
               <Check size={17} /> Leave notes, reply, and upload files
             </div>

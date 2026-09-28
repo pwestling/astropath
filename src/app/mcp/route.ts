@@ -22,14 +22,14 @@ function oauthHandler(request: Request) {
     },
     {
       resource: `${appUrl()}/mcp`,
-      challengeScopes: ["deaddrop:read", "deaddrop:write"],
+      challengeScopes: ["astropath:read", "astropath:write"],
     },
   )(request);
 }
 
 async function handle(request: Request) {
   try {
-    if (request.headers.get("authorization")?.startsWith("Bearer dd_")) {
+    if (request.headers.get("authorization")?.startsWith("Bearer ap_")) {
       const principal = await apiPrincipal(request);
       await rateLimit(principal);
       return await mcpFor(principal, {

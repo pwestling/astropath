@@ -6,14 +6,9 @@ import { appUrl } from "./config";
 
 // The namespace follows this instance's OAuth origin; it is not a network endpoint.
 export const CONNECTION_CLAIM = `${appUrl()}/connection`;
-// Read tokens from installations that used the original fixed namespace before upgrading.
-export const LEGACY_CONNECTION_CLAIM =
-  "https://deaddrop.thehivemind5.com/connection";
 
 export function oauthConnectionClaim(claims: Record<string, unknown>) {
-  return claims[CONNECTION_CLAIM] !== undefined
-    ? claims[CONNECTION_CLAIM]
-    : claims[LEGACY_CONNECTION_CLAIM];
+  return claims[CONNECTION_CLAIM];
 }
 
 export async function reserveIdentityName(tx: Queryable, name: string) {
@@ -22,7 +17,7 @@ export async function reserveIdentityName(tx: Queryable, name: string) {
     [name],
   );
   const existing = await tx.query(
-    "SELECT id FROM dd_connections WHERE lower(name)=lower($1) AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>now())",
+    "SELECT id FROM ap_connections WHERE lower(name)=lower($1) AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>now())",
     [name],
   );
   if (existing.rows.length)
@@ -56,7 +51,7 @@ export class IdentityStore {
         oauth_user_id: string;
         oauth_authorization_client_id: string;
       }>(
-        "SELECT id,name,revoked_at,oauth_user_id,oauth_authorization_client_id FROM dd_connections WHERE oauth_approval_key=$1",
+        "SELECT id,name,revoked_at,oauth_user_id,oauth_authorization_client_id FROM ap_connections WHERE oauth_approval_key=$1",
         [input.approvalKey],
       );
       const found = prior.rows[0];
@@ -82,7 +77,7 @@ export class IdentityStore {
       await reserveIdentityName(tx, name);
       const id = randomUUID();
       await tx.query(
-        `INSERT INTO dd_connections(id,name,kind,scopes,oauth_authorization_client_id,oauth_user_id,oauth_approval_key,spaces,created_by_user_id)
+        `INSERT INTO ap_connections(id,name,kind,scopes,oauth_authorization_client_id,oauth_user_id,oauth_approval_key,spaces,created_by_user_id)
          VALUES($1,$2,'oauth',$3,$4,$5,$6,$7,$5)`,
         [
           id,

@@ -35,7 +35,7 @@ export function errorResponse(error: unknown): Response {
       { status: 400 },
     );
   console.error(
-    "Deaddrop request failed",
+    "Astropath request failed",
     error instanceof Error ? error.message : "Unknown error",
   );
   return Response.json(

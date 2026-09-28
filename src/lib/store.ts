@@ -3,10 +3,10 @@ import { z } from "zod";
 import { db, type Database, type Queryable } from "./db";
 import { AppError } from "./errors";
 import { hash, requireScope, requireSpace, type Principal } from "./policy";
-import { dropInput, listInput } from "./validation";
-import { publishDropEvent } from "./events";
+import { messageInput, listInput } from "./validation";
+import { publishMessageEvent } from "./events";
 
-export interface Drop {
+export interface Message {
   id: string;
   title: string;
   body: string;
@@ -33,7 +33,7 @@ export interface Attachment {
   pathname: string;
   principal_id: string;
   status: "pending" | "ready";
-  drop_id: string | null;
+  message_id: string | null;
   created_at: string;
 }
 
@@ -54,16 +54,16 @@ export function decodeCursor(cursor: string) {
     );
   }
 }
-export function encodeCursor(drop: Drop) {
+export function encodeCursor(message: Message) {
   return Buffer.from(
     JSON.stringify({
-      created_at: drop.created_at,
-      id: drop.id,
+      created_at: message.created_at,
+      id: message.id,
     }),
   ).toString("base64url");
 }
 
-export class DropStore {
+export class MessageStore {
   constructor(private database: Database) {}
 
   async activity(
@@ -74,7 +74,7 @@ export class DropStore {
     tx: Queryable = this.database,
   ) {
     await tx.query(
-      "INSERT INTO dd_activity(actor,action,target_id,detail) VALUES($1,$2,$3,$4)",
+      "INSERT INTO ap_activity(actor,action,target_id,detail) VALUES($1,$2,$3,$4)",
       [actor, action, target, detail],
     );
   }
@@ -83,19 +83,19 @@ export class DropStore {
     principal: Principal,
     id: string,
     tx: Queryable = this.database,
-  ): Promise<Drop> {
-    requireScope(principal, "deaddrop:read");
-    const result = await tx.query<Drop>("SELECT * FROM dd_drops WHERE id=$1", [
+  ): Promise<Message> {
+    requireScope(principal, "astropath:read");
+    const result = await tx.query<Message>("SELECT * FROM ap_messages WHERE id=$1", [
       z.uuid().parse(id),
     ]);
-    const drop = result.rows[0];
-    if (!drop) throw new AppError(404, "not_found", "Drop not found.");
-    requireSpace(principal, drop.space);
-    return drop;
+    const message = result.rows[0];
+    if (!message) throw new AppError(404, "not_found", "Message not found.");
+    requireSpace(principal, message.space);
+    return message;
   }
 
   async list(principal: Principal, raw: unknown) {
-    requireScope(principal, "deaddrop:read");
+    requireScope(principal, "astropath:read");
     const input = listInput.parse(raw);
     if (input.space) requireSpace(principal, input.space);
     const args: unknown[] = [principal.id];
@@ -115,51 +115,51 @@ export class DropStore {
       where.push(
         `(to_tsvector('english',d.title || ' ' || d.body) @@ websearch_to_tsquery('english',${arg(input.q)}) OR d.title ILIKE ${arg(`%${input.q.replace(/[\\%_]/g, "\\$&")}%`)})`,
       );
-    if (input.unread) where.push("r.drop_id IS NULL AND d.principal_id <> $1");
+    if (input.unread) where.push("r.message_id IS NULL AND d.principal_id <> $1");
     if (input.pinned) where.push("d.pinned=true");
     if (input.with_files)
-      where.push("EXISTS (SELECT 1 FROM dd_files f WHERE f.drop_id=d.id)");
+      where.push("EXISTS (SELECT 1 FROM ap_files f WHERE f.message_id=d.id)");
     if (input.cursor) {
       const cursor = decodeCursor(input.cursor);
       where.push(
         `(d.created_at,d.id)<(${arg(cursor.created_at)}::timestamptz,${arg(cursor.id)}::uuid)`,
       );
     }
-    const result = await this.database.query<Drop>(
+    const result = await this.database.query<Message>(
       `SELECT d.*, to_char(d.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at,
-       (r.drop_id IS NULL AND d.principal_id<>$1) AS unread,
-       (SELECT count(*)::integer FROM dd_files f WHERE f.drop_id=d.id) AS attachment_count,
-       (SELECT count(*)::integer FROM dd_drops reply WHERE reply.thread_id=d.id AND reply.parent_id IS NOT NULL) AS reply_count
-       FROM dd_drops d LEFT JOIN dd_receipts r ON r.drop_id=d.id AND r.principal_id=$1
+       (r.message_id IS NULL AND d.principal_id<>$1) AS unread,
+       (SELECT count(*)::integer FROM ap_files f WHERE f.message_id=d.id) AS attachment_count,
+       (SELECT count(*)::integer FROM ap_messages reply WHERE reply.thread_id=d.id AND reply.parent_id IS NOT NULL) AS reply_count
+       FROM ap_messages d LEFT JOIN ap_receipts r ON r.message_id=d.id AND r.principal_id=$1
        WHERE ${where.join(" AND ")} ORDER BY d.created_at DESC,d.id DESC LIMIT ${arg(input.limit + 1)}`,
       args,
     );
     const more = result.rows.length > input.limit;
-    const drops = result.rows.slice(0, input.limit);
+    const messages = result.rows.slice(0, input.limit);
     return {
-      drops,
-      next_cursor: more ? encodeCursor(drops[drops.length - 1]) : null,
+      messages,
+      next_cursor: more ? encodeCursor(messages[messages.length - 1]) : null,
     };
   }
 
   async detail(principal: Principal, id: string) {
-    const drop = await this.get(principal, id);
+    const message = await this.get(principal, id);
     const [files, replies] = await Promise.all([
       this.database.query<Attachment>(
-        "SELECT id,name,content_type,size,drop_id,status FROM dd_files WHERE drop_id=$1 ORDER BY created_at",
-        [drop.id],
+        "SELECT id,name,content_type,size,message_id,status FROM ap_files WHERE message_id=$1 ORDER BY created_at",
+        [message.id],
       ),
-      this.database.query<Drop>(
-        "SELECT * FROM dd_drops WHERE thread_id=$1 AND parent_id IS NOT NULL ORDER BY created_at,id",
-        [drop.thread_id],
+      this.database.query<Message>(
+        "SELECT * FROM ap_messages WHERE thread_id=$1 AND parent_id IS NOT NULL ORDER BY created_at,id",
+        [message.thread_id],
       ),
     ]);
-    return { drop, attachments: files.rows, replies: replies.rows };
+    return { message, attachments: files.rows, replies: replies.rows };
   }
 
   async create(principal: Principal, raw: unknown, idempotencyKey?: string) {
-    requireScope(principal, "deaddrop:write");
-    const input = dropInput.parse(raw);
+    requireScope(principal, "astropath:write");
+    const input = messageInput.parse(raw);
     input.space ??= principal.spaces?.[0] || "general";
     requireSpace(principal, input.space);
     if (new Set(input.attachment_ids).size !== input.attachment_ids.length)
@@ -184,8 +184,8 @@ export class DropStore {
         await tx.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
           `${principal.id}:${idempotencyKey}`,
         ]);
-        const existing = await tx.query<Drop & { request_hash: string }>(
-          "SELECT * FROM dd_drops WHERE principal_id=$1 AND idempotency_key=$2",
+        const existing = await tx.query<Message & { request_hash: string }>(
+          "SELECT * FROM ap_messages WHERE principal_id=$1 AND idempotency_key=$2",
           [principal.id, idempotencyKey],
         );
         if (existing.rows[0]) {
@@ -193,21 +193,21 @@ export class DropStore {
             throw new AppError(
               409,
               "idempotency_conflict",
-              "This key was already used for a different drop.",
+              "This key was already used for a different message.",
             );
           const event = await tx.query<{ id: string }>(
-            "SELECT id::text FROM dd_events WHERE drop_id=$1 AND type='drop.created' ORDER BY id LIMIT 1",
+            "SELECT id::text FROM ap_events WHERE message_id=$1 AND type='message.created' ORDER BY id LIMIT 1",
             [existing.rows[0].id],
           );
           return {
-            drop: existing.rows[0],
+            message: existing.rows[0],
             replayed: true,
             cursor: event.rows[0]?.id ?? null,
           };
         }
       }
       const spaces = await tx.query(
-        "SELECT slug FROM dd_spaces WHERE slug=$1",
+        "SELECT slug FROM ap_spaces WHERE slug=$1",
         [input.space],
       );
       if (!spaces.rows.length)
@@ -215,21 +215,21 @@ export class DropStore {
       let threadId: string = randomUUID();
       const id = threadId;
       if (input.parent_id) {
-        const parent = await tx.query<Drop>(
-          "SELECT * FROM dd_drops WHERE id=$1",
+        const parent = await tx.query<Message>(
+          "SELECT * FROM ap_messages WHERE id=$1",
           [input.parent_id],
         );
         if (!parent.rows[0] || parent.rows[0].space !== input.space)
           throw new AppError(
             404,
             "not_found",
-            "Parent drop not found in this space.",
+            "Parent message not found in this space.",
           );
         threadId = parent.rows[0].thread_id;
       }
       if (input.attachment_ids.length) {
         const files = await tx.query<Attachment>(
-          "SELECT * FROM dd_files WHERE id=ANY($1::uuid[]) AND principal_id=$2 AND space=$3 AND status='ready' AND drop_id IS NULL FOR UPDATE",
+          "SELECT * FROM ap_files WHERE id=ANY($1::uuid[]) AND principal_id=$2 AND space=$3 AND status='ready' AND message_id IS NULL FOR UPDATE",
           [input.attachment_ids, principal.id, input.space],
         );
         if (files.rows.length !== input.attachment_ids.length)
@@ -239,8 +239,8 @@ export class DropStore {
             "Attachments must be uploaded by this connection, ready, unused, and in this space.",
           );
       }
-      const result = await tx.query<Drop>(
-        `INSERT INTO dd_drops(id,space,title,body,sender,principal_id,recipient,tags,parent_id,thread_id,idempotency_key,request_hash)
+      const result = await tx.query<Message>(
+        `INSERT INTO ap_messages(id,space,title,body,sender,principal_id,recipient,tags,parent_id,thread_id,idempotency_key,request_hash)
          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
         [
           id,
@@ -258,7 +258,7 @@ export class DropStore {
         ],
       );
       await tx.query(
-        "UPDATE dd_files SET drop_id=$1 WHERE id=ANY($2::uuid[])",
+        "UPDATE ap_files SET message_id=$1 WHERE id=ANY($2::uuid[])",
         [id, input.attachment_ids],
       );
       await this.activity(
@@ -268,9 +268,9 @@ export class DropStore {
         input.title,
         tx,
       );
-      const cursor = await publishDropEvent(
+      const cursor = await publishMessageEvent(
         tx,
-        "drop.created",
+        "message.created",
         principal,
         result.rows[0],
         {
@@ -280,19 +280,19 @@ export class DropStore {
           attachment_ids: input.attachment_ids,
         },
       );
-      return { drop: result.rows[0], replayed: false, cursor };
+      return { message: result.rows[0], replayed: false, cursor };
     });
   }
 
   async acknowledge(principal: Principal, id: string) {
     await this.database.transaction(async (tx) => {
-      const drop = await this.get(principal, id, tx);
+      const message = await this.get(principal, id, tx);
       const result = await tx.query(
-        "INSERT INTO dd_receipts(drop_id,principal_id) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING drop_id",
+        "INSERT INTO ap_receipts(message_id,principal_id) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING message_id",
         [id, principal.id],
       );
       if (result.rows.length)
-        await publishDropEvent(tx, "drop.acknowledged", principal, drop, {});
+        await publishMessageEvent(tx, "message.acknowledged", principal, message, {});
     });
     return { acknowledged: true, id };
   }
@@ -302,7 +302,7 @@ export class DropStore {
       throw new AppError(
         403,
         "owner_required",
-        "Sign in to organize drops in your spaces.",
+        "Sign in to organize messages in your spaces.",
       );
     const change = z
       .object({
@@ -313,36 +313,36 @@ export class DropStore {
       .parse(raw);
     return this.database.transaction(async (tx) => {
       await this.get(principal, id, tx);
-      const result = await tx.query<Drop>(
-        `UPDATE dd_drops SET pinned=COALESCE($2,pinned),
+      const result = await tx.query<Message>(
+        `UPDATE ap_messages SET pinned=COALESCE($2,pinned),
        archived_at=CASE WHEN $3::boolean IS NULL THEN archived_at WHEN $3 THEN now() ELSE NULL END
        WHERE id=$1 RETURNING *`,
         [id, change.pinned ?? null, change.archived ?? null],
       );
       await this.activity(principal.name, "organized", id, null, tx);
-      await publishDropEvent(tx, "drop.updated", principal, result.rows[0], {
+      await publishMessageEvent(tx, "message.updated", principal, result.rows[0], {
         pinned: result.rows[0].pinned,
         archived_at: result.rows[0].archived_at,
       });
-      return { drop: result.rows[0] };
+      return { message: result.rows[0] };
     });
   }
 
   async file(principal: Principal, id: string) {
-    requireScope(principal, "deaddrop:read");
+    requireScope(principal, "astropath:read");
     const result = await this.database.query<Attachment>(
-      "SELECT * FROM dd_files WHERE id=$1",
+      "SELECT * FROM ap_files WHERE id=$1",
       [z.uuid().parse(id)],
     );
     const file = result.rows[0];
     if (
       !file ||
-      (!file.drop_id && file.principal_id !== principal.id && !principal.owner)
+      (!file.message_id && file.principal_id !== principal.id && !principal.owner)
     )
       throw new AppError(404, "not_found", "File not found.");
     requireSpace(principal, file.space);
-    if (file.drop_id) await this.get(principal, file.drop_id);
+    if (file.message_id) await this.get(principal, file.message_id);
     return file;
   }
 }
-export const store = new DropStore(db);
+export const store = new MessageStore(db);

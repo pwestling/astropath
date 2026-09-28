@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { appUrl } from "@/lib/config";
-import { dropInput, fileInput } from "@/lib/validation";
+import { messageInput, fileInput } from "@/lib/validation";
 import { replyInput, waitMessagesInput, waitReplyInput } from "@/lib/chat";
 
 export const dynamic = "force-dynamic";
@@ -32,10 +32,10 @@ export function GET() {
     {
       openapi: "3.1.0",
       info: {
-        title: "Deaddrop API",
+        title: "Astropath API",
         version: "0.1.0",
         description:
-          "A private shared inbox for notes, files, and handoffs. Authenticate with a per-app bearer token. Recipients are routing labels; spaces and token scopes control access. Original files remain private. Reads do not acknowledge drops.",
+          "A private workspace for messages, files, and agent conversations. Authenticate with a per-app bearer token. Recipients are routing labels; spaces and token scopes control access. Original files remain private. Reads do not acknowledge messages.",
       },
       servers: [{ url: `${appUrl()}/api/v1` }],
       security: [{ bearerAuth: [] }],
@@ -44,17 +44,17 @@ export function GET() {
           bearerAuth: {
             type: "http",
             scheme: "bearer",
-            description: "A dd_ token created in the Deaddrop admin UI",
+            description: "A ap_ token created in the Astropath admin UI",
           },
         },
         schemas: {
-          DropInput: z.toJSONSchema(dropInput),
+          MessageInput: z.toJSONSchema(messageInput),
           FileInput: z.toJSONSchema(fileInput),
           WaitMessagesInput: z.toJSONSchema(waitMessagesInput),
           WaitReplyInput: z.toJSONSchema(
-            waitReplyInput.omit({ drop_id: true }),
+            waitReplyInput.omit({ message_id: true }),
           ),
-          ReplyInput: z.toJSONSchema(replyInput.omit({ drop_id: true })),
+          ReplyInput: z.toJSONSchema(replyInput.omit({ message_id: true })),
         },
       },
       paths: {
@@ -64,30 +64,30 @@ export function GET() {
             summary:
               "Wait for new messages in a space or addressed to an identity",
             description:
-              "Requires deaddrop:read. Returns one JSON response after messages arrive or timeout (default 30 seconds, maximum 50). Optional exact recipient and space filters combine with AND. Includes replies; excludes your own messages unless include_self:true. Starts now unless after is supplied; after:'0' replays retained creation events. Save cursor and pass it as after on the next wait, including after timeouts. has_more means call again immediately. Credentials and permissions are rechecked while waiting. Does not acknowledge. Bodies are capped at 8,000 characters and flagged body_truncated; read the drop for full text. See docs/chat.md.",
+              "Requires astropath:read. Returns one JSON response after messages arrive or timeout (default 30 seconds, maximum 50). Optional exact recipient and space filters combine with AND. Includes replies; excludes your own messages unless include_self:true. Starts now unless after is supplied; after:'0' replays retained creation events. Save cursor and pass it as after on the next wait, including after timeouts. has_more means call again immediately. Credentials and permissions are rechecked while waiting. Does not acknowledge. Bodies are capped at 8,000 characters and flagged body_truncated; read the message for full text. See docs/chat.md.",
             requestBody: body({
               $ref: "#/components/schemas/WaitMessagesInput",
             }),
             responses: response,
           },
         },
-        "/drops/{id}/wait": {
+        "/messages/{id}/wait": {
           post: {
             operationId: "waitForReply",
             summary: "Wait for later messages in a conversation",
             description:
-              "Requires deaddrop:read. Without after, catches later conversation messages already received since this drop's creation. Includes nested replies, ignores receipts and your own messages by default. Returns status (messages or timeout), messages, thread_id, cursor and has_more. Resume using cursor as after. Limits and body truncation match waitForMessages.",
+              "Requires astropath:read. Without after, catches later conversation messages already received since this message's creation. Includes nested replies, ignores receipts and your own messages by default. Returns status (messages or timeout), messages, thread_id, cursor and has_more. Resume using cursor as after. Limits and body truncation match waitForMessages.",
             parameters: id(),
             requestBody: body({ $ref: "#/components/schemas/WaitReplyInput" }),
             responses: response,
           },
         },
-        "/drops/{id}/replies": {
+        "/messages/{id}/replies": {
           post: {
-            operationId: "replyToDrop",
+            operationId: "replyToMessage",
             summary: "Reply in the same conversation and space",
             description:
-              "Requires read and write scopes. Inherits the parent's title and space. Defaults recipient to the parent message's sender; explicit null broadcasts. Accepts body, attachment_ids and optional idempotency_key. Returns drop, replayed and cursor. The Idempotency-Key header takes precedence over the body key.",
+              "Requires read and write scopes. Inherits the parent's title and space. Defaults recipient to the parent message's sender; explicit null broadcasts. Accepts body, attachment_ids and optional idempotency_key. Returns message, replayed and cursor. The Idempotency-Key header takes precedence over the body key.",
             parameters: [
               ...id(),
               {
@@ -105,13 +105,13 @@ export function GET() {
             },
           },
         },
-        "/drops/{id}/thread": {
+        "/messages/{id}/thread": {
           get: {
             operationId: "readThread",
             summary:
               "Read a chronological conversation snapshot from any message",
             description:
-              "Requires deaddrop:read. Includes the root and nested replies with attachment metadata. Returns messages, thread_id, space, cursor and next_page. Pass next_page as page to continue the same snapshot; after all pages pass cursor as after to waitForReply. Bodies over 8,000 characters are flagged body_truncated. Reading does not acknowledge.",
+              "Requires astropath:read. Includes the root and nested replies with attachment metadata. Returns messages, thread_id, space, cursor and next_page. Pass next_page as page to continue the same snapshot; after all pages pass cursor as after to waitForReply. Bodies over 8,000 characters are flagged body_truncated. Reading does not acknowledge.",
             parameters: [
               ...id(),
               {
@@ -138,7 +138,7 @@ export function GET() {
             operationId: "subscribeEvents",
             summary: "Subscribe to space or recipient events using SSE",
             description:
-              "Requires deaddrop:read. Optional space and exact case-sensitive recipient filters combine with AND within the credential's current access. Starts from now unless after or Last-Event-ID is provided; use 0 for replay. Last-Event-ID takes precedence. Sends drop.created (including replies and attachments), drop.updated, and drop.acknowledged metadata. Save ready/checkpoint IDs too. Reconnect after EOF with the last successfully processed string ID; responses rotate after 50 seconds. Heartbeats are comments. stream_error contains code and retryable. No note bodies or private upload events. See the repository's docs/events.md for the protocol and listener example.",
+              "Requires astropath:read. Optional space and exact case-sensitive recipient filters combine with AND within the credential's current access. Starts from now unless after or Last-Event-ID is provided; use 0 for replay. Last-Event-ID takes precedence. Sends message.created (including replies and attachments), message.updated, and message.acknowledged metadata. Save ready/checkpoint IDs too. Reconnect after EOF with the last successfully processed string ID; responses rotate after 50 seconds. Heartbeats are comments. stream_error contains code and retryable. No note bodies or private upload events. See the repository's docs/events.md for the protocol and listener example.",
             parameters: [
               {
                 name: "space",
@@ -187,10 +187,10 @@ export function GET() {
             responses: response,
           },
         },
-        "/drops": {
+        "/messages": {
           get: {
-            operationId: "listDrops",
-            summary: "List or search top-level drops",
+            operationId: "listMessages",
+            summary: "List or search top-level messages",
             parameters: [
               ...["space", "q", "recipient", "cursor"].map((name) => ({
                 name,
@@ -216,8 +216,8 @@ export function GET() {
             responses: response,
           },
           post: {
-            operationId: "leaveDrop",
-            summary: "Leave a drop or reply",
+            operationId: "sendMessage",
+            summary: "Leave a message or reply",
             description:
               "Use parent_id to reply in the same space. Upload files first and include their ready attachment IDs. Sender is assigned from the token. Repeat the same Idempotency-Key and payload to retrieve the same result.",
             parameters: [
@@ -227,27 +227,27 @@ export function GET() {
                 schema: { type: "string", maxLength: 150 },
               },
             ],
-            requestBody: body({ $ref: "#/components/schemas/DropInput" }),
+            requestBody: body({ $ref: "#/components/schemas/MessageInput" }),
             responses: {
               ...response,
               "201": {
                 description:
-                  "Drop created or original idempotent result returned",
+                  "Message created or original idempotent result returned",
               },
             },
           },
         },
-        "/drops/{id}": {
+        "/messages/{id}": {
           get: {
-            operationId: "readDrop",
-            summary: "Read a drop, attachment metadata, and replies",
+            operationId: "readMessage",
+            summary: "Read a message, attachment metadata, and replies",
             parameters: id(),
             responses: response,
           },
         },
-        "/drops/{id}/acknowledge": {
+        "/messages/{id}/acknowledge": {
           post: {
-            operationId: "acknowledgeDrop",
+            operationId: "acknowledgeMessage",
             summary: "Mark read for this connection",
             parameters: id(),
             responses: response,
@@ -274,7 +274,7 @@ export function GET() {
             operationId: "uploadSmallFile",
             summary: "Upload a file using JSON and base64",
             description:
-              "Up to 2 MiB decoded. size must match the exact byte count. Returns a ready file_id to attach to a drop.",
+              "Up to 2 MiB decoded. size must match the exact byte count. Returns a ready file_id to attach to a message.",
             requestBody: body(
               z.toJSONSchema(
                 fileInput.extend({ content_base64: z.string().max(2800000) }),

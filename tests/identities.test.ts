@@ -5,7 +5,7 @@ import { beforeAll, afterAll, expect, it } from "vitest";
 import type { QueryResultRow } from "pg";
 import type { Database } from "../src/lib/db";
 import { IdentityStore } from "../src/lib/identities";
-import { DropStore } from "../src/lib/store";
+import { MessageStore } from "../src/lib/store";
 
 const engine = new PGlite();
 const database: Database = {
@@ -29,13 +29,13 @@ const database: Database = {
     ),
 };
 const identities = new IdentityStore(database);
-const drops = new DropStore(database);
+const messages = new MessageStore(database);
 const approval = (name: string) => ({
   name,
   clientId: "shared-claude-client",
   userId: "owner",
   approvalKey: randomUUID(),
-  scopes: ["deaddrop:read", "deaddrop:write"],
+  scopes: ["astropath:read", "astropath:write"],
 });
 
 beforeAll(async () => {
@@ -44,15 +44,15 @@ beforeAll(async () => {
     "utf8",
   );
   // Simulate an existing deployment, then apply the additive migration twice.
-  await engine.exec(`CREATE TABLE dd_connections (
+  await engine.exec(`CREATE TABLE ap_connections (
     id uuid PRIMARY KEY, name text NOT NULL, kind text NOT NULL,
     token_hash text UNIQUE, token_prefix text, oauth_client_id text UNIQUE,
     scopes text[] NOT NULL, spaces text[], created_at timestamptz NOT NULL DEFAULT now(),
     last_used_at timestamptz, expires_at timestamptz, revoked_at timestamptz
   )`);
   await engine.query(
-    "INSERT INTO dd_connections(id,name,kind,oauth_client_id,scopes) VALUES($1,'Legacy Claude','oauth','shared-claude-client',$2)",
-    [randomUUID(), ["deaddrop:read"]],
+    "INSERT INTO ap_connections(id,name,kind,oauth_client_id,scopes) VALUES($1,'Legacy Claude','oauth','shared-claude-client',$2)",
+    [randomUUID(), ["astropath:read"]],
   );
   await engine.exec(schema);
   await engine.exec(schema);
@@ -61,7 +61,7 @@ afterAll(() => engine.close());
 
 it("preserves legacy OAuth connections during repeatable migration", async () => {
   const { rows } = await database.query(
-    "SELECT name,oauth_client_id,oauth_approval_key FROM dd_connections WHERE name='Legacy Claude'",
+    "SELECT name,oauth_client_id,oauth_approval_key FROM ap_connections WHERE name='Legacy Claude'",
   );
   expect(rows).toEqual([
     {
@@ -80,25 +80,25 @@ it("keeps identities, senders, and read receipts distinct for one shared OAuth c
     id,
     name,
     owner: false,
-    scopes: ["deaddrop:read", "deaddrop:write"],
+    scopes: ["astropath:read", "astropath:write"],
     spaces: null,
   });
   const sender = principal("sender", "Muse");
-  const { drop } = await drops.create(sender, { title: "Shared message" });
-  await drops.acknowledge(principal(personal, "Claude Personal"), drop.id);
+  const { message } = await messages.create(sender, { title: "Shared message" });
+  await messages.acknowledge(principal(personal, "Claude Personal"), message.id);
   expect(
-    (await drops.list(principal(personal, "Claude Personal"), { unread: true }))
-      .drops,
+    (await messages.list(principal(personal, "Claude Personal"), { unread: true }))
+      .messages,
   ).toHaveLength(0);
   expect(
-    (await drops.list(principal(work, "Claude Work"), { unread: true })).drops,
+    (await messages.list(principal(work, "Claude Work"), { unread: true })).messages,
   ).toHaveLength(1);
-  const reply = await drops.create(principal(work, "Claude Work"), {
+  const reply = await messages.create(principal(work, "Claude Work"), {
     title: "Acknowledged",
-    parent_id: drop.id,
+    parent_id: message.id,
   });
-  expect(reply.drop.sender).toBe("Claude Work");
-  expect(reply.drop.principal_id).toBe(work);
+  expect(reply.message.sender).toBe("Claude Work");
+  expect(reply.message.principal_id).toBe(work);
 });
 
 it("reuses a retried approval without creating another identity", async () => {
@@ -117,8 +117,8 @@ it("reuses a retried approval without creating another identity", async () => {
 
 it("rejects duplicate active names across token and OAuth connections", async () => {
   await database.query(
-    "INSERT INTO dd_connections(id,name,kind,scopes) VALUES($1,'Muse','token',$2)",
-    [randomUUID(), ["deaddrop:read"]],
+    "INSERT INTO ap_connections(id,name,kind,scopes) VALUES($1,'Muse','token',$2)",
+    [randomUUID(), ["astropath:read"]],
   );
   await expect(identities.approve(approval("  MUSE  "))).rejects.toThrow(
     "already in use",
@@ -132,7 +132,7 @@ it("does not revive revoked identities on approval retries", async () => {
   const input = approval("Revoked identity");
   const id = await identities.approve(input);
   await database.query(
-    "UPDATE dd_connections SET revoked_at=now() WHERE id=$1",
+    "UPDATE ap_connections SET revoked_at=now() WHERE id=$1",
     [id],
   );
   await expect(identities.approve(input)).rejects.toThrow("revoked");

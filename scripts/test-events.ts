@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pool, db } from "../src/lib/db";
 import { mintToken, type Principal } from "../src/lib/policy";
-import { DropStore } from "../src/lib/store";
+import { MessageStore } from "../src/lib/store";
 import { EventStore } from "../src/lib/events";
 import { MemberStore } from "../src/lib/members";
 
@@ -22,7 +22,7 @@ const owner: Principal = {
   name: "Test Owner",
   owner: true,
   spaces: null,
-  scopes: ["deaddrop:read", "deaddrop:write"],
+  scopes: ["astropath:read", "astropath:write"],
 };
 type Frame = { type: string; id?: string; data: Record<string, unknown> };
 type TestStream = {
@@ -44,7 +44,7 @@ async function token(
   const minted = mintToken();
   const id = randomUUID();
   await pool.query(
-    "INSERT INTO dd_connections(id,name,kind,token_hash,scopes,spaces,created_by_user_id) VALUES($1,$2,'token',$3,$4,$5,$6)",
+    "INSERT INTO ap_connections(id,name,kind,token_hash,scopes,spaces,created_by_user_id) VALUES($1,$2,'token',$3,$4,$5,$6)",
     [id, `SSE ${id}`, minted.tokenHash, scopes, spaces, creator],
   );
   return { id, value: minted.token };
@@ -147,12 +147,12 @@ async function main() {
   );
   assert.match(process.env.OWNER_EMAIL!, /^identity-test-/);
   await pool.query(
-    "INSERT INTO dd_spaces(slug,name) VALUES($1,'Events Test'),($2,'Other')",
+    "INSERT INTO ap_spaces(slug,name) VALUES($1,'Events Test'),($2,'Other')",
     [space, other],
   );
   const all = await token(null);
   const restricted = await token([space]);
-  const writeOnly = await token([space], null, ["deaddrop:write"]);
+  const writeOnly = await token([space], null, ["astropath:write"]);
   for (const [query, auth, status] of [
     ["", "", 401],
     ["", writeOnly.value, 403],
@@ -178,42 +178,42 @@ async function main() {
   );
   const first = await api(
     restricted.value,
-    "drops",
+    "messages",
     { title: "First", recipient: "Muse" },
     201,
   );
   await api(
     all.value,
-    "drops",
+    "messages",
     { title: "Secret", space: other, recipient: "Muse" },
     201,
   );
   await api(
     restricted.value,
-    "drops",
+    "messages",
     { title: "Other recipient", recipient: "Claude" },
     201,
   );
   const reply = await api(
     restricted.value,
-    "drops",
-    { title: "Reply", recipient: "Muse", parent_id: first.drop.id },
+    "messages",
+    { title: "Reply", recipient: "Muse", parent_id: first.message.id },
     201,
   );
   const latest = await stream.wait(
-    (frame) => frame.data.drop_id === reply.drop.id,
+    (frame) => frame.data.message_id === reply.message.id,
   );
   assert.deepEqual(
     stream.frames
-      .filter((frame) => frame.type === "drop.created")
-      .map((frame) => frame.data.drop_id),
-    [first.drop.id, reply.drop.id],
+      .filter((frame) => frame.type === "message.created")
+      .map((frame) => frame.data.message_id),
+    [first.message.id, reply.message.id],
   );
   stream.close();
   await stream.completion;
   const offline = await api(
     restricted.value,
-    "drops",
+    "messages",
     { title: "While disconnected", recipient: "Muse" },
     201,
   );
@@ -222,26 +222,26 @@ async function main() {
     `space=${space}&recipient=Muse&after=0`,
     latest.id,
   );
-  await replay.wait((frame) => frame.data.drop_id === offline.drop.id);
+  await replay.wait((frame) => frame.data.message_id === offline.message.id);
   assert.deepEqual(
     replay.frames
-      .filter((frame) => frame.type === "drop.created")
-      .map((frame) => frame.data.drop_id),
-    [offline.drop.id],
+      .filter((frame) => frame.type === "message.created")
+      .map((frame) => frame.data.message_id),
+    [offline.message.id],
   );
-  await api(restricted.value, `drops/${offline.drop.id}/acknowledge`, {});
-  await api(restricted.value, `drops/${offline.drop.id}/acknowledge`, {});
-  await new DropStore(db).update(owner, offline.drop.id, { pinned: true });
-  await replay.wait((frame) => frame.type === "drop.updated");
+  await api(restricted.value, `messages/${offline.message.id}/acknowledge`, {});
+  await api(restricted.value, `messages/${offline.message.id}/acknowledge`, {});
+  await new MessageStore(db).update(owner, offline.message.id, { pinned: true });
+  await replay.wait((frame) => frame.type === "message.updated");
   assert.equal(
-    replay.frames.filter((frame) => frame.type === "drop.acknowledged").length,
+    replay.frames.filter((frame) => frame.type === "message.acknowledged").length,
     1,
   );
   console.log(
     "PASS: authenticated SSE, space/recipient filtering, replies, replay, acknowledgements and updates.",
   );
 
-  await pool.query("UPDATE dd_connections SET revoked_at=now() WHERE id=$1", [
+  await pool.query("UPDATE ap_connections SET revoked_at=now() WHERE id=$1", [
     restricted.id,
   ]);
   const revoked = await replay.wait((frame) => frame.type === "stream_error");
@@ -251,7 +251,7 @@ async function main() {
   const expiring = await token([space]);
   const expiringStream = await listen(expiring.value, `space=${space}`);
   await pool.query(
-    "UPDATE dd_connections SET expires_at=now()-interval '1 second' WHERE id=$1",
+    "UPDATE ap_connections SET expires_at=now()-interval '1 second' WHERE id=$1",
     [expiring.id],
   );
   assert.equal(
@@ -274,7 +274,7 @@ async function main() {
   );
   const userId = (
     await pool.query<{ user_id: string }>(
-      "SELECT user_id FROM dd_members WHERE id=$1",
+      "SELECT user_id FROM ap_members WHERE id=$1",
       [invitation.member.id],
     )
   ).rows[0].user_id;
@@ -285,19 +285,19 @@ async function main() {
   });
   const hidden = await api(
     all.value,
-    "drops",
+    "messages",
     { title: "Newly forbidden", space: other },
     201,
   );
   const visible = await api(
     memberToken.value,
-    "drops",
+    "messages",
     { title: "Still visible", space },
     201,
   );
-  await memberStream.wait((frame) => frame.data.drop_id === visible.drop.id);
+  await memberStream.wait((frame) => frame.data.message_id === visible.message.id);
   assert.ok(
-    memberStream.frames.every((frame) => frame.data.drop_id !== hidden.drop.id),
+    memberStream.frames.every((frame) => frame.data.message_id !== hidden.message.id),
   );
   await members.update(owner, String(invitation.member.id), { disabled: true });
   assert.equal(
@@ -317,12 +317,12 @@ async function main() {
     await transaction.query("SELECT pg_advisory_xact_lock(1788124201, 1)");
     const pending = (
       await transaction.query<{ id: string }>(
-        "INSERT INTO dd_events(type,space,drop_id,actor_id,actor,data) VALUES('drop.updated',$1,$2,'test','Test','{}') RETURNING id::text",
-        [space, offline.drop.id],
+        "INSERT INTO ap_events(type,space,message_id,actor_id,actor,data) VALUES('message.updated',$1,$2,'test','Test','{}') RETURNING id::text",
+        [space, offline.message.id],
       )
     ).rows[0].id;
     let completed = false;
-    const concurrent = new DropStore(db)
+    const concurrent = new MessageStore(db)
       .create(owner, { title: "Concurrent commit", space })
       .then((result) => {
         completed = true;
@@ -348,7 +348,7 @@ async function main() {
   console.log(
     "PASS: concurrent transactions preserve cursor ordering without missed notifications.",
   );
-  const directory = await mkdtemp(join(tmpdir(), "deaddrop-listener-"));
+  const directory = await mkdtemp(join(tmpdir(), "astropath-listener-"));
   const cursorFile = join(directory, "cursor.json");
   const sampleToken = await token([space]);
   function listener() {
@@ -368,8 +368,8 @@ async function main() {
       {
         env: {
           ...process.env,
-          DEADDROP_URL: base,
-          DEADDROP_TOKEN: sampleToken.value,
+          ASTROPATH_URL: base,
+          ASTROPATH_TOKEN: sampleToken.value,
         },
         stdio: ["ignore", "pipe", "pipe"],
       },
@@ -407,8 +407,8 @@ async function main() {
     await savedCursor(await eventStore.latest());
     firstRun.child.kill("SIGTERM");
     await firstRun.completion;
-    assert.ok(firstRun.output().includes("drop.created"));
-    const fresh = await new DropStore(db).create(owner, {
+    assert.ok(firstRun.output().includes("message.created"));
+    const fresh = await new MessageStore(db).create(owner, {
       title: "Listener restart",
       space,
     });
@@ -420,10 +420,10 @@ async function main() {
       .split("\n")
       .map((line) => JSON.parse(line));
     assert.deepEqual(
-      received.map((event) => event.drop_id),
-      [fresh.drop.id],
+      received.map((event) => event.message_id),
+      [fresh.message.id],
     );
-    await pool.query("UPDATE dd_connections SET revoked_at=now() WHERE id=$1", [
+    await pool.query("UPDATE ap_connections SET revoked_at=now() WHERE id=$1", [
       sampleToken.id,
     ]);
     assert.equal(await secondRun.completion, 1);

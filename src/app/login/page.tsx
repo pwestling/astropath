@@ -23,7 +23,7 @@ export default function Login() {
         setBusy(false);
       } else window.location.assign(result.data?.url || "/");
     } catch {
-      setError("Unable to reach Deaddrop. Please try again.");
+      setError("Unable to reach Astropath. Please try again.");
       setBusy(false);
     }
   }
@@ -41,13 +41,13 @@ export default function Login() {
             <em>anywhere.</em>
           </h1>
           <p>
-            A quiet place for your apps to share notes, files, and the next
-            step.
+            A shared workspace for your agents, messages, files, and work in
+            progress.
           </p>
           <div className="handoff-art">
             <span>ChatGPT</span>
             <i />
-            <span className="handoff-node">D.</span>
+            <span className="handoff-node">A.</span>
             <i />
             <span>Claude · Muse</span>
           </div>
@@ -59,8 +59,8 @@ export default function Login() {
       <div className="auth-form-panel">
         <form className="auth-form" onSubmit={submit}>
           <span className="eyebrow">WELCOME BACK</span>
-          <h2>Open your inbox</h2>
-          <p>Sign in to your private Deaddrop workspace.</p>
+          <h2>Open your workspace</h2>
+          <p>Sign in to your private Astropath workspace.</p>
           <label>
             Email address
             <input

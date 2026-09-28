@@ -1,11 +1,11 @@
-# Deploy Deaddrop on a VPS
+# Deploy Astropath on a VPS
 
 The live `deaddrop.thehivemind5.com` instance runs on Porter's NixOS `vps-01`.
 See [its deployment record](vps-01-migration.md) and use
 `scripts/deploy-vps-01.sh` for that instance. The guide below remains the
 general-purpose deployment path, including the older RackNerd script.
 
-Deaddrop is a single-owner application with optional space-restricted members. It can run on a Linux VPS with Node.js 24, nginx, systemd, Postgres and a private Cloudflare R2 bucket. There is no tenant model. Vercel hosting is not required; Vercel Blob remains an optional storage backend.
+Astropath is a single-owner application with optional space-restricted members. It can run on a Linux VPS with Node.js 24, nginx, systemd, Postgres and a private Cloudflare R2 bucket. There is no tenant model. Vercel hosting is not required; Vercel Blob remains an optional storage backend.
 
 ## Prerequisites
 
@@ -20,7 +20,7 @@ Create the R2 bucket in your own Cloudflare account, then configure its CORS pol
 ```json
 [
   {
-    "AllowedOrigins": ["https://deaddrop.example.com"],
+    "AllowedOrigins": ["https://astropath.example.com"],
     "AllowedMethods": ["GET", "PUT", "HEAD"],
     "AllowedHeaders": ["content-type", "content-length", "if-none-match"],
     "ExposeHeaders": ["ETag"],
@@ -36,7 +36,7 @@ The server signs direct R2 upload/download URLs. Clients must send the returned 
 Install dependencies locally with Node 24 and `npm ci`. Prepare a minimal environment file with these values:
 
 ```dotenv
-APP_URL=https://deaddrop.example.com
+APP_URL=https://astropath.example.com
 BETTER_AUTH_SECRET=YOUR_STABLE_AUTH_SECRET
 OWNER_EMAIL=you@example.com
 DATABASE_URL=YOUR_POSTGRES_URL
@@ -59,7 +59,7 @@ Commit your changes, then run:
 
 ```sh
 REMOTE_HOST=root@YOUR_SERVER \
-DEPLOY_DOMAIN=deaddrop.example.com \
+DEPLOY_DOMAIN=astropath.example.com \
 REMOTE_NODE=/opt/deaddrop-node/bin/node \
 bash deploy.sh
 ```
@@ -70,21 +70,21 @@ Releases live in `/app/deaddrop/releases/`. `current` points to the active relea
 
 Obtain a trusted certificate for your hostname. For a fresh domain, point DNS to the VPS, configure an HTTP ACME webroot at `/app/deaddrop/acme`, then use Certbot. For an existing live site, **obtain the certificate with DNS validation before switching traffic**. A manual DNS certificate must be changed to an automatic renewal method after cutover; manual issuance alone does not auto-renew.
 
-On RackNerd, Certbot runs from `/app/certbot` using `/root/.local/bin/uv run certbot`. For a pre-issued certificate, install the rendered nginx config from the current release, validate with `nginx -t`, and reload nginx. Later deploys install the nginx config automatically when the certificate exists. nginx keeps SSE unbuffered, forwards the original HTTPS origin, limits request bodies to 4 MiB (large files upload directly to storage), and avoids logging OAuth query strings. Deaddrop is hidden from the RackNerd public site directory.
+On RackNerd, Certbot runs from `/app/certbot` using `/root/.local/bin/uv run certbot`. For a pre-issued certificate, install the rendered nginx config from the current release, validate with `nginx -t`, and reload nginx. Later deploys install the nginx config automatically when the certificate exists. nginx keeps SSE unbuffered, forwards the original HTTPS origin, limits request bodies to 4 MiB (large files upload directly to storage), and avoids logging OAuth query strings. Astropath is hidden from the RackNerd public site directory.
 
 Verify HTTPS against the VPS before changing DNS:
 
 ```sh
-curl --resolve deaddrop.example.com:443:YOUR_VPS_IP \
-  https://deaddrop.example.com/api/health
+curl --resolve astropath.example.com:443:YOUR_VPS_IP \
+  https://astropath.example.com/api/health
 ```
 
 After cutover, configure automatic webroot renewal and test it. For example, with Certbot 3:
 
 ```sh
-certbot reconfigure --cert-name deaddrop.example.com \
+certbot reconfigure --cert-name astropath.example.com \
   --authenticator webroot --webroot-path /app/deaddrop/acme
-certbot renew --cert-name deaddrop.example.com --dry-run
+certbot renew --cert-name astropath.example.com --dry-run
 ```
 
 Ensure your renewal job reloads nginx after successful renewal. Test this hostname's renewal; do not change unrelated certificates on a shared VPS.

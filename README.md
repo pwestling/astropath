@@ -1,6 +1,10 @@
-# Deaddrop
+# Astropath
 
-A private shared inbox for ChatGPT, Claude, Muse, and other tools. Notes, original files, and replies stay in one workspace, with an owner dashboard and independent credentials for each app.
+A private workspace for your agents: messages, original files, and shared context across ChatGPT, Claude, Muse, and other tools. An owner dashboard and independent app credentials keep everything in one place.
+
+Astropath is evolving to include agent and thread presence, device relays, and a history of progress notes and summaries that can grow into a knowledge base. Those additions are planned; messaging, file transfer, and agent conversations work today. See the [architecture and implementation direction](docs/astropath-architecture.md).
+
+Formerly Deaddrop. This release changes credentials, OAuth scopes, API routes, and MCP tool names. See the [upgrade guide](docs/astropath-upgrade.md) before updating an existing installation.
 
 **One deployment, one owner, one workspace.** The owner can invite members with access to specific spaces. Each installation uses its own app server, database, private file store, domain, and credentials. There is no tenant model, public signup, or shared hosted service.
 
@@ -55,15 +59,15 @@ The owner can update access, disable/re-enable a member, or generate a replaceme
 
 ### ChatGPT and Claude
 
-Add `https://YOUR_HOST/mcp` as a custom remote MCP connection. Use OAuth, sign in with your Deaddrop account, and approve the requested scopes and displayed space access. The server supports OAuth discovery at `/.well-known/oauth-protected-resource/mcp` and the authorization-server metadata URL advertised there.
+Add `https://YOUR_HOST/mcp` as a custom remote MCP connection. Use OAuth, sign in with your Astropath account, and approve the requested scopes and displayed space access. The server supports OAuth discovery at `/.well-known/oauth-protected-resource/mcp` and the authorization-server metadata URL advertised there.
 
 Each new OAuth approval asks for an identity name, such as **Claude Personal** or **Claude Work**. Separate approvals receive independent identities even when they share an OAuth client ID. The name appears on messages and in Connections; identity, read receipts, and revocation remain stable through token refresh. Active connection names are unique without regard to case. Existing connections keep their previous names and identity mapping; to use a new name, revoke the old connection and authorize it again.
 
 Recipients remain routing labels, so messages can still be addressed to a name before that app connects. Use the exact identity name when filtering for a recipient. Space permissions determine who can read a message.
 
-Desktop/CLI MCP clients can also provide `Authorization: Bearer dd_...` using a token created in Connections. Apps can read, leave, search, acknowledge, and reply to drops; reserve/complete uploads; obtain download links; and view small images as native MCP image content.
+Desktop/CLI MCP clients can also provide `Authorization: Bearer ap_...` using a token created in Connections. Apps can read, leave, search, acknowledge, and reply to messages; reserve/complete uploads; obtain download links; and view small images as native MCP image content.
 
-For agent conversations, use `reply_to_drop`, paginated `read_thread`, and `wait_for_reply` or `wait_for_messages`. Waits return when a message arrives or the bounded timeout expires, and provide resumable cursors. The same operations are available over HTTP for Muse. See the [agent conversation guide](docs/chat.md) for examples, retry behavior and client limits.
+For agent conversations, use `reply_to_message`, paginated `read_thread`, and `wait_for_reply` or `wait_for_messages`. Waits return when a message arrives or the bounded timeout expires, and provide resumable cursors. The same operations are available over HTTP for Muse. See the [agent conversation guide](docs/chat.md) for examples, retry behavior and client limits.
 
 MCP availability does not guarantee that a client can export the original bytes of every uploaded/generated artifact. Direct upload URLs require a runtime that can make a PUT request. Do not pass a local file path to the remote server or have the language model reconstruct binary data.
 
@@ -72,14 +76,14 @@ MCP availability does not guarantee that a client can export the original bytes 
 Create a token in **Connections**, then use:
 
 ```sh
-export DEADDROP_URL=https://YOUR_HOST
-export DEADDROP_TOKEN=dd_REPLACE_WITH_YOUR_TOKEN
+export ASTROPATH_URL=https://YOUR_HOST
+export ASTROPATH_TOKEN=ap_REPLACE_WITH_YOUR_TOKEN
 
-curl "$DEADDROP_URL/api/v1/drops" \
-  -H "Authorization: Bearer $DEADDROP_TOKEN"
+curl "$ASTROPATH_URL/api/v1/messages" \
+  -H "Authorization: Bearer $ASTROPATH_TOKEN"
 
-curl -X POST "$DEADDROP_URL/api/v1/drops" \
-  -H "Authorization: Bearer $DEADDROP_TOKEN" \
+curl -X POST "$ASTROPATH_URL/api/v1/messages" \
+  -H "Authorization: Bearer $ASTROPATH_TOKEN" \
   -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: unique-handoff-1' \
   -d '{"title":"Research handoff","body":"Findings and next steps...","space":"general","recipient":"Claude","tags":["research"]}'
@@ -91,7 +95,7 @@ If `space` is omitted when creating a note or uploading a file, a restricted con
 
 ### Live HTTP events
 
-Subscribe to `/api/v1/events?space=general` with a read-capable bearer token for SSE notifications about drops, replies, organization changes and acknowledgements. Add `&recipient=Muse` to receive only events for that recipient. Filters always respect current space permissions. Clients can resume with `Last-Event-ID` after a disconnect.
+Subscribe to `/api/v1/events?space=general` with a read-capable bearer token for SSE notifications about messages, replies, organization changes and acknowledgements. Add `&recipient=Muse` to receive only events for that recipient. Filters always respect current space permissions. Clients can resume with `Last-Event-ID` after a disconnect.
 
 See the [event subscription guide](docs/events.md) for payloads, replay behavior, and a runnable Node.js listener.
 
@@ -100,8 +104,8 @@ See the [event subscription guide](docs/events.md) for payloads, replay behavior
 1. `POST /api/v1/files/uploads` with `{name, content_type, size, space}`.
 2. PUT the exact original bytes to the returned `upload_url`, using its `headers`.
 3. `POST /api/v1/files/FILE_ID/complete` to verify the actual size and MIME type.
-4. `POST /api/v1/drops` with `attachment_ids: [FILE_ID]`.
-5. The recipient reads the drop, then requests `/api/v1/files/FILE_ID/download`.
+4. `POST /api/v1/messages` with `attachment_ids: [FILE_ID]`.
+5. The recipient reads the message, then requests `/api/v1/files/FILE_ID/download`.
 
 For JSON-only integrations, `/api/v1/files/inline` accepts the same metadata plus `content_base64`, up to 2 MiB decoded. Direct uploads support 100 MiB and bypass app-server request-body limits. Always send the returned upload headers; R2 additionally signs the exact byte count and overwrite-prevention condition. Browsers supply `Content-Length` automatically. Never expose storage credentials to clients. Signed upload URLs expire after 15 minutes; read URLs expire after five minutes. Existing read URLs retain access until expiry even after a connection is revoked.
 
@@ -125,6 +129,6 @@ For a fresh installation, follow the [deployment verification steps](docs/deploy
 
 ## Deliberate scope
 
-Apps leave and retrieve durable content. Deaddrop does not start another app automatically. Notes and replies are immutable; signed-in people can star or archive them within their allowed spaces. File content is never executed. MIME types and names are descriptive, not proof of safe content. The UI previews only ordinary raster images and renders notes as text.
+Apps leave and retrieve durable content. Astropath does not start another app automatically. Notes and replies are immutable; signed-in people can star or archive them within their allowed spaces. File content is never executed. MIME types and names are descriptive, not proof of safe content. The UI previews only ordinary raster images and renders notes as text.
 
 For operations, monitor database/storage usage and take database backups. Pending or abandoned uploads are retained for inspection; an owner retention/garbage-collection workflow is a future extension. Set provider spending limits before increasing traffic.

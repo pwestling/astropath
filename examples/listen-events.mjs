@@ -1,4 +1,4 @@
-// Node.js 24+. Set DEADDROP_URL and DEADDROP_TOKEN, then see docs/events.md.
+// Node.js 24+. Set ASTROPATH_URL and ASTROPATH_TOKEN, then see docs/events.md.
 import { readFile, writeFile, rename } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { parseArgs } from "node:util";
@@ -47,9 +47,11 @@ async function* frames(body) {
 }
 
 async function main() {
-  if (!process.env.DEADDROP_URL || !process.env.DEADDROP_TOKEN)
-    throw new StopListening("Set DEADDROP_URL and DEADDROP_TOKEN.");
-  const url = new URL("/api/v1/events", process.env.DEADDROP_URL);
+  const baseUrl = process.env.ASTROPATH_URL;
+  const token = process.env.ASTROPATH_TOKEN;
+  if (!baseUrl || !token)
+    throw new StopListening("Set ASTROPATH_URL and ASTROPATH_TOKEN.");
+  const url = new URL("/api/v1/events", baseUrl);
   if (values.space) url.searchParams.set("space", values.space);
   if (values.recipient) url.searchParams.set("recipient", values.recipient);
   let cursor = values.after;
@@ -73,7 +75,7 @@ async function main() {
     try {
       const response = await fetch(url, {
         headers: {
-          Authorization: `Bearer ${process.env.DEADDROP_TOKEN}`,
+          Authorization: `Bearer ${token}`,
           Accept: "text/event-stream",
           ...(cursor !== undefined ? { "Last-Event-ID": cursor } : {}),
         },
@@ -98,7 +100,7 @@ async function main() {
             throw new StopListening(`Subscription stopped: ${frame.data.code}`);
           throw new Error(frame.data.code);
         }
-        if (frame.event.startsWith("drop.")) {
+        if (frame.event.startsWith("message.")) {
           try {
             await handleEvent(frame.data);
           } catch (error) {

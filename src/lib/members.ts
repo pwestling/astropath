@@ -34,7 +34,7 @@ function ownerOnly(principal: Principal) {
 }
 async function validateSpaces(tx: Queryable, spaces: string[]) {
   const found = await tx.query(
-    "SELECT slug FROM dd_spaces WHERE slug=ANY($1::text[])",
+    "SELECT slug FROM ap_spaces WHERE slug=ANY($1::text[])",
     [spaces],
   );
   if (found.rows.length !== spaces.length)
@@ -55,7 +55,7 @@ export class MemberStore {
     return {
       members: (
         await this.database.query(
-          `SELECT ${columns} FROM dd_members ORDER BY created_at`,
+          `SELECT ${columns} FROM ap_members ORDER BY created_at`,
         )
       ).rows,
     };
@@ -72,7 +72,7 @@ export class MemberStore {
       ]);
       await validateSpaces(tx, input.spaces);
       const existing = await tx.query(
-        `SELECT email FROM "user" WHERE lower(email)=$1 UNION ALL SELECT email FROM dd_members WHERE email=$1`,
+        `SELECT email FROM "user" WHERE lower(email)=$1 UNION ALL SELECT email FROM ap_members WHERE email=$1`,
         [input.email],
       );
       if (existing.rows.length)
@@ -82,7 +82,7 @@ export class MemberStore {
           "That email already has an account or invitation.",
         );
       const result = await tx.query(
-        `INSERT INTO dd_members(id,email,name,spaces,invite_hash,invite_expires_at)
+        `INSERT INTO ap_members(id,email,name,spaces,invite_hash,invite_expires_at)
         VALUES($1,$2,$3,$4,$5,now()+interval '7 days') RETURNING ${columns}`,
         [
           randomUUID(),
@@ -107,7 +107,7 @@ export class MemberStore {
     return this.database.transaction(async (tx) => {
       if (input.spaces) await validateSpaces(tx, input.spaces);
       const result = await tx.query<{ user_id: string | null }>(
-        `UPDATE dd_members SET spaces=COALESCE($2,spaces),
+        `UPDATE ap_members SET spaces=COALESCE($2,spaces),
         disabled_at=CASE WHEN $3::boolean IS NULL THEN disabled_at WHEN $3 THEN now() ELSE NULL END,
         invite_hash=CASE WHEN $3 THEN NULL ELSE invite_hash END,
         invite_expires_at=CASE WHEN $3 THEN NULL ELSE invite_expires_at END
@@ -127,7 +127,7 @@ export class MemberStore {
     ownerOnly(principal);
     const invite = invitation();
     const result = await this.database.query(
-      `UPDATE dd_members SET invite_hash=$2,invite_expires_at=now()+interval '7 days'
+      `UPDATE ap_members SET invite_hash=$2,invite_expires_at=now()+interval '7 days'
       WHERE id=$1 AND user_id IS NULL AND disabled_at IS NULL RETURNING id`,
       [z.uuid().parse(id), invite.invite_hash],
     );
@@ -146,7 +146,7 @@ export class MemberStore {
       email: string;
       spaces: string[];
     }>(
-      `SELECT id,name,email,spaces FROM dd_members
+      `SELECT id,name,email,spaces FROM ap_members
       WHERE invite_hash=$1 AND invite_expires_at>now() AND user_id IS NULL AND disabled_at IS NULL${lock ? " FOR UPDATE" : ""}`,
       [
         hash(
@@ -168,7 +168,7 @@ export class MemberStore {
   async inspect(token: string) {
     const member = await this.pending(this.database, token);
     const spaces = await this.database.query(
-      "SELECT slug,name FROM dd_spaces WHERE slug=ANY($1::text[]) ORDER BY name",
+      "SELECT slug,name FROM ap_spaces WHERE slug=ANY($1::text[]) ORDER BY name",
       [member.spaces],
     );
     return { name: member.name, email: member.email, spaces: spaces.rows };
@@ -190,7 +190,7 @@ export class MemberStore {
         [randomUUID(), userId, passwordHash],
       );
       await tx.query(
-        "UPDATE dd_members SET user_id=$2,invite_hash=NULL,invite_expires_at=NULL WHERE id=$1",
+        "UPDATE ap_members SET user_id=$2,invite_hash=NULL,invite_expires_at=NULL WHERE id=$1",
         [member.id, userId],
       );
       return { email: member.email };

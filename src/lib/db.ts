@@ -1,15 +1,15 @@
 import { Pool, type QueryResultRow } from "pg";
 
-const globalDb = globalThis as typeof globalThis & { deaddropPool?: Pool };
+const globalDb = globalThis as typeof globalThis & { astropathPool?: Pool };
 export const pool =
-  globalDb.deaddropPool ??
+  globalDb.astropathPool ??
   new Pool({
     connectionString: process.env.DATABASE_URL,
     max: 5,
     idleTimeoutMillis: 10000,
     connectionTimeoutMillis: 10000,
   });
-globalDb.deaddropPool = pool;
+globalDb.astropathPool = pool;
 
 export interface Queryable {
   query<T extends QueryResultRow>(

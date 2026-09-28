@@ -37,7 +37,7 @@ import { Brand } from "./brand";
 import { api, bytes, relative } from "./api";
 import { authClient } from "@/lib/auth-client";
 import { MemberSettings } from "./member-settings";
-import type { Drop, Attachment } from "@/lib/store";
+import type { Message, Attachment } from "@/lib/store";
 
 type Section =
   "inbox" | "starred" | "archive" | "connections" | "activity" | "settings";
@@ -98,7 +98,7 @@ export function Console({
   const [space, setSpace] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
-  const [drops, setDrops] = useState<Drop[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
@@ -119,7 +119,7 @@ export function Console({
       setError(message(e));
     }
   }, []);
-  const loadDrops = useCallback(
+  const loadMessages = useCallback(
     async (next?: string) => {
       const requestId = ++latestList.current;
       setBusy(true);
@@ -133,11 +133,14 @@ export function Console({
       if (filter === "files") query.set("with_files", "true");
       if (next) query.set("cursor", next);
       try {
-        const result = await api<{ drops: Drop[]; next_cursor: string | null }>(
-          `drops?${query}`,
-        );
+        const result = await api<{
+          messages: Message[];
+          next_cursor: string | null;
+        }>(`messages?${query}`);
         if (requestId === latestList.current) {
-          setDrops((old) => (next ? [...old, ...result.drops] : result.drops));
+          setMessages((old) =>
+            next ? [...old, ...result.messages] : result.messages,
+          );
           setCursor(result.next_cursor);
         }
       } catch (e) {
@@ -152,9 +155,9 @@ export function Console({
     void refreshOverview();
   }, [refreshOverview]);
   useEffect(() => {
-    const timer = setTimeout(() => void loadDrops(), search ? 250 : 0);
+    const timer = setTimeout(() => void loadMessages(), search ? 250 : 0);
     return () => clearTimeout(timer);
-  }, [loadDrops, search]);
+  }, [loadMessages, search]);
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(""), 3500);
@@ -162,7 +165,7 @@ export function Console({
   }, [notice]);
   const refresh = () => {
     void refreshOverview();
-    void loadDrops();
+    void loadMessages();
   };
   function navigate(value: Section) {
     setSection(value);
@@ -171,11 +174,11 @@ export function Console({
     setSearch("");
     setFilter("all");
   }
-  async function togglePin(drop: Drop) {
+  async function togglePin(item: Message) {
     try {
-      await api(`drops/${drop.id}`, {
+      await api(`messages/${item.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ pinned: !drop.pinned }),
+        body: JSON.stringify({ pinned: !item.pinned }),
       });
       refresh();
     } catch (e) {
@@ -188,7 +191,7 @@ export function Console({
         !c.revoked_at && (!c.expires_at || new Date(c.expires_at) > new Date()),
     ) || [];
   const listSection = ["inbox", "starred", "archive"].includes(section);
-  const visibleDrops = drops;
+  const visibleMessages = messages;
   return (
     <div className="app-shell">
       <aside className={`sidebar ${mobileNav ? "mobile-open" : ""}`}>
@@ -329,7 +332,7 @@ export function Console({
                 className="button primary"
                 onClick={() => setComposer(true)}
               >
-                <Plus size={17} /> New drop
+                <Plus size={17} /> New message
               </button>
             ) : section === "connections" ? (
               <button
@@ -361,7 +364,7 @@ export function Console({
                   label="WAITING FOR YOU"
                   value={overview?.unread}
                   icon={<CircleDot size={17} />}
-                  caption="Unread drops"
+                  caption="Unread messages"
                 />
                 <Stat
                   label="CONNECTED APPS"
@@ -374,7 +377,7 @@ export function Console({
                 <div className="inbox-toolbar">
                   <div className="tabs">
                     {[
-                      ["all", "All drops"],
+                      ["all", "All messages"],
                       ["unread", "Unread"],
                       ["files", "With files"],
                     ].map(([id, label]) => (
@@ -392,8 +395,8 @@ export function Console({
                     <label className="search">
                       <Search size={16} />
                       <input
-                        aria-label="Search drops"
-                        placeholder="Search drops…"
+                        aria-label="Search messages"
+                        placeholder="Search messages…"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                       />
@@ -414,85 +417,89 @@ export function Console({
                   </div>
                 </div>
                 <div className="list-heading">
-                  <span>DROP</span>
+                  <span>MESSAGE</span>
                   <span>FROM / SPACE</span>
                   <span>RECEIVED</span>
                   <span />
                 </div>
-                {busy && !drops.length ? (
+                {busy && !messages.length ? (
                   <div className="loading">
                     <LoaderCircle size={22} className="spin" /> Loading your
-                    drops…
+                    messages…
                   </div>
-                ) : visibleDrops.length ? (
-                  visibleDrops.map((drop) => (
+                ) : visibleMessages.length ? (
+                  visibleMessages.map((message) => (
                     <div
-                      key={drop.id}
-                      className={`drop-row ${drop.unread ? "unread" : ""}`}
+                      key={message.id}
+                      className={`message-row ${message.unread ? "unread" : ""}`}
                     >
                       <button
-                        className="drop-main"
-                        onClick={() => setSelected(drop.id)}
+                        className="message-main"
+                        onClick={() => setSelected(message.id)}
                       >
                         <span
-                          className={`file-icon ${Number(drop.attachment_count) > 0 ? "file-icon-blue" : ""}`}
+                          className={`file-icon ${Number(message.attachment_count) > 0 ? "file-icon-blue" : ""}`}
                         >
-                          {Number(drop.attachment_count) > 0 ? (
+                          {Number(message.attachment_count) > 0 ? (
                             <FileImage size={20} />
                           ) : (
                             <FileText size={20} />
                           )}
                         </span>
-                        <span className="drop-text">
+                        <span className="message-text">
                           <strong>
-                            {drop.title}
-                            {drop.unread && <i className="unread-dot" />}
+                            {message.title}
+                            {message.unread && <i className="unread-dot" />}
                           </strong>
                           <span>
-                            {drop.body.replace(/[#*`]/g, "").slice(0, 105) ||
-                              `${drop.attachment_count} attached file${drop.attachment_count === 1 ? "" : "s"}`}
+                            {message.body.replace(/[#*`]/g, "").slice(0, 105) ||
+                              `${message.attachment_count} attached file${message.attachment_count === 1 ? "" : "s"}`}
                           </span>
-                          <span className="drop-tags">
-                            {drop.tags.slice(0, 3).map((tag) => (
+                          <span className="message-tags">
+                            {message.tags.slice(0, 3).map((tag) => (
                               <em key={tag}>{tag}</em>
                             ))}
-                            {!!drop.attachment_count && (
+                            {!!message.attachment_count && (
                               <small>
                                 <Paperclip size={11} />
-                                {drop.attachment_count}
+                                {message.attachment_count}
                               </small>
                             )}
-                            {!!drop.reply_count && (
-                              <small>{drop.reply_count} replies</small>
+                            {!!message.reply_count && (
+                              <small>{message.reply_count} replies</small>
                             )}
                           </span>
                         </span>
                       </button>
-                      <div className="drop-origin">
+                      <div className="message-origin">
                         <span className="sender">
                           <span className="sender-avatar">
-                            {drop.sender.slice(0, 1)}
+                            {message.sender.slice(0, 1)}
                           </span>
-                          {drop.sender}
+                          {message.sender}
                         </span>
                         <small>
                           <Folder size={11} />
-                          {spaces.find((s) => s.slug === drop.space)?.name ||
-                            drop.space}
-                          {drop.recipient && <> · to {drop.recipient}</>}
+                          {spaces.find((s) => s.slug === message.space)?.name ||
+                            message.space}
+                          {message.recipient && <> · to {message.recipient}</>}
                         </small>
                       </div>
-                      <time title={new Date(drop.created_at).toLocaleString()}>
-                        {relative(drop.created_at)}
+                      <time
+                        title={new Date(message.created_at).toLocaleString()}
+                      >
+                        {relative(message.created_at)}
                       </time>
                       <button
-                        className={`icon-button star-button ${drop.pinned ? "is-pinned" : ""}`}
-                        aria-label={drop.pinned ? "Unstar drop" : "Star drop"}
-                        onClick={() => togglePin(drop)}
+                        className={`icon-button star-button ${message.pinned ? "is-pinned" : ""}`}
+                        aria-label={
+                          message.pinned ? "Unstar message" : "Star message"
+                        }
+                        onClick={() => togglePin(message)}
                       >
                         <Star
                           size={16}
-                          fill={drop.pinned ? "currentColor" : "none"}
+                          fill={message.pinned ? "currentColor" : "none"}
                         />
                       </button>
                     </div>
@@ -529,7 +536,7 @@ export function Console({
                         className="button"
                         onClick={() => setComposer(true)}
                       >
-                        <Plus size={16} /> Leave a drop
+                        <Plus size={16} /> Send a message
                       </button>
                       <button
                         className="text-button"
@@ -545,7 +552,7 @@ export function Console({
                     <button
                       className="button"
                       disabled={busy}
-                      onClick={() => loadDrops(cursor)}
+                      onClick={() => loadMessages(cursor)}
                     >
                       Load more
                     </button>
@@ -609,7 +616,7 @@ export function Console({
                 ))
               ) : (
                 <div className="plain-empty">
-                  Activity will appear as you and your apps use Deaddrop.
+                  Activity will appear as you and your apps use Astropath.
                 </div>
               )}
             </div>
@@ -638,12 +645,12 @@ export function Console({
           onCreated={() => {
             setComposer(false);
             refresh();
-            setNotice("Drop delivered to your workspace.");
+            setNotice("Message saved to your workspace.");
           }}
         />
       )}
       {selected && (
-        <DropDetail
+        <MessageDetail
           id={selected}
           onClose={() => setSelected(null)}
           onChange={refresh}
@@ -738,8 +745,8 @@ function Connections({
           <span className="eyebrow">CHATGPT & CLAUDE</span>
           <h2>Connect with MCP</h2>
           <p>
-            Add this address as a custom connector, then sign in to Deaddrop and
-            approve access.
+            Add this address as a custom connector, then sign in to Astropath
+            and approve access.
           </p>
           <CopyValue value={`${baseUrl}/mcp`} />
           <small>
@@ -758,7 +765,7 @@ function Connections({
           </p>
           <CopyValue value={`${baseUrl}/api/v1`} />
           <small>
-            <KeyRound size={13} /> Authorization: Bearer dd_…
+            <KeyRound size={13} /> Authorization: Bearer ap_…
           </small>
         </div>
       </div>
@@ -786,7 +793,7 @@ function Connections({
                   </span>
                 </strong>
                 <small>
-                  {connection.scopes.includes("deaddrop:write")
+                  {connection.scopes.includes("astropath:write")
                     ? "Read / write"
                     : "Read only"}{" "}
                   ·{" "}
@@ -860,11 +867,11 @@ function Connections({
         </summary>
         <p>Send a note using your token:</p>
         <CopyValue
-          value={`curl -X POST '${baseUrl}/api/v1/drops' -H 'Authorization: Bearer YOUR_TOKEN' -H 'Content-Type: application/json' -d '{"title":"A note from Muse","body":"Pick this up in Claude.","space":"${defaultSpace}"}'`}
+          value={`curl -X POST '${baseUrl}/api/v1/messages' -H 'Authorization: Bearer YOUR_TOKEN' -H 'Content-Type: application/json' -d '{"title":"A note from Muse","body":"Pick this up in Claude.","space":"${defaultSpace}"}'`}
         />
         <p>
-          List drops with <code>GET /api/v1/drops</code>. Read one with{" "}
-          <code>GET /api/v1/drops/ID</code>. Upload small files through{" "}
+          List messages with <code>GET /api/v1/messages</code>. Read one with{" "}
+          <code>GET /api/v1/messages/ID</code>. Upload small files through{" "}
           <code>POST /api/v1/files/inline</code>, or request a direct upload at{" "}
           <code>POST /api/v1/files/uploads</code>.
         </p>
@@ -1016,8 +1023,8 @@ function Composer({
         }
         uploaded.current = { space, ids };
       }
-      setStatus("Leaving your drop…");
-      await api("drops", {
+      setStatus("Sending your message…");
+      await api("messages", {
         method: "POST",
         headers: { "Idempotency-Key": submissionKey.current },
         body: JSON.stringify({
@@ -1042,7 +1049,7 @@ function Composer({
   }
   return (
     <Modal
-      title="Leave a drop"
+      title="Send a message"
       subtitle="A note now. A starting point later."
       onClose={() => {
         if (!busy) onClose();
@@ -1145,7 +1152,7 @@ function Composer({
             ) : (
               <Send size={16} />
             )}{" "}
-            Leave drop
+            Send message
           </button>
         </div>
       </form>
@@ -1153,7 +1160,7 @@ function Composer({
   );
 }
 
-function DropDetail({
+function MessageDetail({
   id,
   onClose,
   onChange,
@@ -1165,9 +1172,9 @@ function DropDetail({
   onNotice: (message: string) => void;
 }) {
   const [detail, setDetail] = useState<{
-    drop: Drop;
+    message: Message;
     attachments: Attachment[];
-    replies: Drop[];
+    replies: Message[];
   } | null>(null);
   const [error, setError] = useState("");
   const [reply, setReply] = useState("");
@@ -1175,7 +1182,7 @@ function DropDetail({
   const [preview, setPreview] = useState<Record<string, string>>({});
   const load = useCallback(async () => {
     try {
-      setDetail(await api(`drops/${id}`));
+      setDetail(await api(`messages/${id}`));
     } catch (e) {
       setError(message(e));
     }
@@ -1213,13 +1220,13 @@ function DropDetail({
     if (!detail) return;
     setBusy(true);
     try {
-      await api("drops", {
+      await api("messages", {
         method: "POST",
         body: JSON.stringify({
-          title: `Re: ${detail.drop.title}`.slice(0, 200),
+          title: `Re: ${detail.message.title}`.slice(0, 200),
           body: reply,
-          space: detail.drop.space,
-          parent_id: detail.drop.id,
+          space: detail.message.space,
+          parent_id: detail.message.id,
         }),
       });
       setReply("");
@@ -1232,7 +1239,7 @@ function DropDetail({
     }
   }
   return (
-    <Modal title="Drop details" onClose={onClose} wide>
+    <Modal title="Message details" onClose={onClose} wide>
       {error && (
         <div className="error" role="alert">
           {error}
@@ -1243,18 +1250,18 @@ function DropDetail({
           <div className="detail-meta">
             <span className="pill">
               <Folder size={12} />
-              {detail.drop.space}
+              {detail.message.space}
             </span>
-            <time>{new Date(detail.drop.created_at).toLocaleString()}</time>
+            <time>{new Date(detail.message.created_at).toLocaleString()}</time>
           </div>
-          <h1>{detail.drop.title}</h1>
+          <h1>{detail.message.title}</h1>
           <div className="detail-sender">
-            <span className="sender-avatar">{detail.drop.sender[0]}</span>Left
-            by <strong>{detail.drop.sender}</strong>
-            {detail.drop.recipient && <> · For {detail.drop.recipient}</>}
+            <span className="sender-avatar">{detail.message.sender[0]}</span>
+            Left by <strong>{detail.message.sender}</strong>
+            {detail.message.recipient && <> · For {detail.message.recipient}</>}
           </div>
           <div className="note-content">
-            {detail.drop.body || (
+            {detail.message.body || (
               <span className="muted">No note attached.</span>
             )}
           </div>
@@ -1302,7 +1309,7 @@ function DropDetail({
             <button
               className="button small-button"
               onClick={() =>
-                act(`drops/${id}/acknowledge`, {}).then(() =>
+                act(`messages/${id}/acknowledge`, {}).then(() =>
                   onNotice("Marked read for your account."),
                 )
               }
@@ -1312,24 +1319,28 @@ function DropDetail({
             <button
               className="button small-button"
               onClick={() =>
-                act(`drops/${id}`, { pinned: !detail.drop.pinned }, "PATCH")
+                act(
+                  `messages/${id}`,
+                  { pinned: !detail.message.pinned },
+                  "PATCH",
+                )
               }
             >
               <Star size={14} />
-              {detail.drop.pinned ? "Unstar" : "Star"}
+              {detail.message.pinned ? "Unstar" : "Star"}
             </button>
             <button
               className="button small-button"
               onClick={() =>
                 act(
-                  `drops/${id}`,
-                  { archived: !detail.drop.archived_at },
+                  `messages/${id}`,
+                  { archived: !detail.message.archived_at },
                   "PATCH",
                 )
               }
             >
               <Archive size={14} />
-              {detail.drop.archived_at ? "Restore" : "Archive"}
+              {detail.message.archived_at ? "Restore" : "Archive"}
             </button>
           </div>
           <div className="replies">
@@ -1362,7 +1373,7 @@ function DropDetail({
         </div>
       ) : (
         <div className="loading">
-          <LoaderCircle className="spin" /> Loading drop…
+          <LoaderCircle className="spin" /> Loading message…
         </div>
       )}
     </Modal>
@@ -1394,8 +1405,8 @@ function TokenModal({
           name: form.get("name"),
           scopes:
             form.get("access") === "read"
-              ? ["deaddrop:read"]
-              : ["deaddrop:read", "deaddrop:write"],
+              ? ["astropath:read"]
+              : ["astropath:read", "astropath:write"],
           spaces: form.get("space") ? [form.get("space")] : null,
           expires_in_days: Number(form.get("expiry")),
         }),
@@ -1634,7 +1645,7 @@ function SettingsPanel({
             window.location.assign("/login");
           }}
         >
-          <LogOut size={15} /> Sign out of Deaddrop
+          <LogOut size={15} /> Sign out of Astropath
         </button>
       </section>
     </div>

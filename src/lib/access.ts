@@ -16,7 +16,7 @@ export async function userPrincipal(
     disabled_at: Date | null;
   }>(
     `SELECT u.id,u.name,u.email,m.id AS member_id,m.spaces,m.disabled_at
-      FROM "user" u LEFT JOIN dd_members m ON m.user_id=u.id WHERE u.id=$1`,
+      FROM "user" u LEFT JOIN ap_members m ON m.user_id=u.id WHERE u.id=$1`,
     [userId],
   );
   const user = result.rows[0];

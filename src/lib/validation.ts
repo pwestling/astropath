@@ -8,7 +8,7 @@ export const identityName = z
   .min(1)
   .max(80)
   .regex(/^[^\x00-\x1f\x7f]+$/, "Use a name without control characters.");
-export const dropInput = z
+export const messageInput = z
   .object({
     title: z.string().trim().min(1).max(200),
     body: z.string().max(200000).default(""),
@@ -56,7 +56,7 @@ export const connectionInput = z
   .object({
     name: identityName,
     scopes: z
-      .array(z.enum(["deaddrop:read", "deaddrop:write"]))
+      .array(z.enum(["astropath:read", "astropath:write"]))
       .min(1)
       .max(2),
     spaces: z.array(spaceSlug).min(1).max(50).nullable().default(null),

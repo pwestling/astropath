@@ -6,7 +6,7 @@ export function Brand() {
         <Layers2 size={21} strokeWidth={1.8} />
       </span>
       <span>
-        deaddrop<span className="brand-period">.</span>
+        astropath<span className="brand-period">.</span>
       </span>
     </div>
   );

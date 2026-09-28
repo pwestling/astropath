@@ -1,8 +1,8 @@
 # RackNerd development checkout
 
-The working development checkout is `/root/dev/astropath` on RackNerd. It is
-currently a clone of this Deaddrop repository; only the directory and service
-names anticipate the upcoming app rename. `astropath-dev.service` runs `next
+The working development checkout is `/root/dev/astropath` on RackNerd. The
+application is named Astropath; the GitHub remote and production infrastructure
+still use their existing Deaddrop names. `astropath-dev.service` runs `next
 dev` under the unprivileged `astropath-dev` account and listens only on
 `127.0.0.1:4312`. It is enabled at boot. The unit file is tracked at
 [`deploy/astropath-dev.service`](../deploy/astropath-dev.service).

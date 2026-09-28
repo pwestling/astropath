@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     const response = errorResponse(error);
     response.headers.set("Cache-Control", "no-store");
     if (response.status === 401)
-      response.headers.set("WWW-Authenticate", 'Bearer realm="Deaddrop"');
+      response.headers.set("WWW-Authenticate", 'Bearer realm="Astropath"');
     if (response.status === 429) response.headers.set("Retry-After", "60");
     return response;
   }

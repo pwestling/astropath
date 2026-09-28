@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Deaddrop — shared context",
-  description: "A private inbox for your AI apps.",
+  title: "Astropath — your agent workspace",
+  description:
+    "A private workspace for messages, files, and shared context across your agents.",
   robots: { index: false, follow: false },
 };
 export default function RootLayout({

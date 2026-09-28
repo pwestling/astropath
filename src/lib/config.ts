@@ -13,4 +13,4 @@ export function ownerEmail(): string {
 
 export const MAX_FILE_BYTES = 100 * 1024 * 1024;
 export const MAX_INLINE_BYTES = 2 * 1024 * 1024;
-export const SCOPES = ["deaddrop:read", "deaddrop:write"] as const;
+export const SCOPES = ["astropath:read", "astropath:write"] as const;

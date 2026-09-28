@@ -1,18 +1,18 @@
-# Deploy your own Deaddrop
+# Deploy your own Astropath
 
 This guide covers **Vercel hosting with Vercel Blob**. For Node/systemd/nginx hosting with Cloudflare R2, see [the VPS deployment guide](vps-deployment.md).
 
 This guide installs one private workspace with one administrator and optional invited members. Use a separate Vercel project, Postgres database, private Blob store, auth secret, and domain for each independent installation. Invited members receive access to assigned spaces within the same workspace; there is no tenant model.
 
-You need Node.js 24, npm, Git, a Vercel account, a Neon account (or another reachable Postgres server), and access to the DNS for your domain. Deaddrop supplies its own email/password authentication: no email service, external login provider, or AI API key is required.
+You need Node.js 24, npm, Git, a Vercel account, a Neon account (or another reachable Postgres server), and access to the DNS for your domain. Astropath supplies its own email/password authentication: no email service, external login provider, or AI API key is required.
 
 ## 1. Get the code and create your Vercel project
 
 Fork or copy the repository into a GitHub account you control, then clone your copy:
 
 ```sh
-git clone https://github.com/YOUR_GITHUB_USERNAME/deaddrop.git
-cd deaddrop
+git clone https://github.com/YOUR_GITHUB_USERNAME/YOUR_REPOSITORY.git astropath
+cd astropath
 npm ci
 npx vercel@latest login
 npx vercel@latest link
@@ -37,7 +37,7 @@ In your Vercel project's **Storage** area, create a **Blob** store with **Privat
 
 ## 3. Choose the public origin and configure DNS
 
-Choose a stable origin, such as `https://deaddrop.example.com`. It serves the admin UI, HTTP API, MCP endpoint, and OAuth provider. Use the domain itself for `APP_URL`, without `/mcp`, another path, or query parameters.
+Choose a stable origin, such as `https://astropath.example.com`. It serves the admin UI, HTTP API, MCP endpoint, and OAuth provider. Use the domain itself for `APP_URL`, without `/mcp`, another path, or query parameters.
 
 In Vercel, open **Project Settings → Domains**, add your hostname, and follow the DNS records Vercel shows for **your project**. For a subdomain, this is typically a CNAME. Copy the displayed target exactly; do not copy another installation's Vercel DNS target. Add any ownership-verification TXT record requested by Vercel. Wait until the domain and HTTPS certificate are valid. See [Vercel's custom-domain guide](https://vercel.com/docs/domains/working-with-domains/add-a-domain).
 
@@ -56,7 +56,7 @@ chmod 600 .env.bootstrap
 Edit `.env.bootstrap` locally. Use your **production** origin and **direct** database URL for this one-time setup:
 
 ```dotenv
-APP_URL=https://deaddrop.example.com
+APP_URL=https://astropath.example.com
 BETTER_AUTH_SECRET="YOUR_GENERATED_SECRET"
 DATABASE_URL="YOUR_DIRECT_POSTGRES_URL"
 BLOB_READ_WRITE_TOKEN="YOUR_PRIVATE_STORE_TOKEN"
@@ -72,9 +72,9 @@ node --env-file=.env.bootstrap --import tsx scripts/migrate.ts
 node --env-file=.env.bootstrap --import tsx scripts/create-owner.ts
 ```
 
-The migration creates Better Auth tables and the Deaddrop schema, including the default `general` space. It is safe to rerun. Owner creation only works on a database without users and refuses to overwrite an existing account. `OWNER_NAME` is optional and defaults to `Owner`. There is no public signup route enabled and no owner creation during web requests.
+The migration creates Better Auth tables and the Astropath schema, including the default `general` space. It is safe to rerun. Owner creation only works on a database without users and refuses to overwrite an existing account. `OWNER_NAME` is optional and defaults to `Owner`. There is no public signup route enabled and no owner creation during web requests.
 
-On an empty database, Better Auth may initially log missing tables before the migration creates them. Confirm the command exits successfully with `Authentication and Deaddrop database schemas are ready.` before creating the owner.
+On an empty database, Better Auth may initially log missing tables before the migration creates them. Confirm the command exits successfully with `Authentication and Astropath database schemas are ready.` before creating the owner.
 
 Store your password in a password manager and remove `OWNER_PASSWORD` from `.env.bootstrap` after success. Keep the remaining file private for future migrations, or retrieve the settings from your secret manager when needed. `.env*` files are ignored by Git and excluded from CLI uploads; `.env.example` contains placeholders only. Avoid exporting conflicting environment variables in your shell: already-exported values take precedence over Node's `--env-file`.
 
@@ -100,7 +100,7 @@ npx vercel@latest --prod
 
 Migrations are deliberately separate from builds. Run them before deploying code that needs new tables or columns. `.vercelignore` excludes local admin scripts from CLI uploads; you run bootstrap and migrations locally, not inside a production function.
 
-In **Deployment Protection**, ensure the canonical production hostname is reachable by external clients without a Vercel login, password challenge, or bypass header. Keep preview deployments protected. Where supported, protect deployment URLs while leaving your custom production domain accessible. Deaddrop still requires its own owner login or connection credentials. OAuth discovery, the login/consent pages, and dynamic client registration must be reachable so clients can initiate authorization. See [Vercel deployment protection](https://vercel.com/docs/deployment-protection).
+In **Deployment Protection**, ensure the canonical production hostname is reachable by external clients without a Vercel login, password challenge, or bypass header. Keep preview deployments protected. Where supported, protect deployment URLs while leaving your custom production domain accessible. Astropath still requires its own owner login or connection credentials. OAuth discovery, the login/consent pages, and dynamic client registration must be reachable so clients can initiate authorization. See [Vercel deployment protection](https://vercel.com/docs/deployment-protection).
 
 You may connect your GitHub copy under **Project Settings → Git** for automatic deployments. Remember that a push-triggered build does not run migrations; apply any required schema update before pushing the corresponding production release.
 
@@ -109,12 +109,12 @@ You may connect your GitHub copy under **Project Settings → Git** for automati
 Set your origin and check the public surfaces:
 
 ```sh
-export DEADDROP_URL=https://deaddrop.example.com
-curl --fail-with-body "$DEADDROP_URL/api/health"
-curl --fail-with-body "$DEADDROP_URL/.well-known/oauth-protected-resource/mcp"
-curl --fail-with-body "$DEADDROP_URL/.well-known/oauth-authorization-server/api/auth"
-curl --fail-with-body "$DEADDROP_URL/openapi.json"
-curl -i "$DEADDROP_URL/mcp"
+export ASTROPATH_URL=https://astropath.example.com
+curl --fail-with-body "$ASTROPATH_URL/api/health"
+curl --fail-with-body "$ASTROPATH_URL/.well-known/oauth-protected-resource/mcp"
+curl --fail-with-body "$ASTROPATH_URL/.well-known/oauth-authorization-server/api/auth"
+curl --fail-with-body "$ASTROPATH_URL/openapi.json"
+curl -i "$ASTROPATH_URL/mcp"
 ```
 
 Health should return `status: ok`; the discovery documents and OpenAPI servers should point to **your** origin. Unauthenticated `/mcp` should return **401**, not a Vercel login page. Health is a server-liveness check and does not test the database or Blob store.
@@ -124,12 +124,12 @@ Open `/login` and sign in as your owner. Create a named token in **Connections**
 For an automated HTTP/MCP/file check, keep your production database URL and Blob token in `.env.bootstrap`, then invoke the smoke script with the target URL explicitly:
 
 ```sh
-SMOKE_URL="$DEADDROP_URL" node --env-file=.env.bootstrap --import tsx scripts/smoke.ts
+SMOKE_URL="$ASTROPATH_URL" node --env-file=.env.bootstrap --import tsx scripts/smoke.ts
 ```
 
 It creates test credentials, notes, a space, and real Blob objects, then removes its test data in cleanup. The database and Blob token must belong to the target URL. Run it only against an instance you administer; provider requests/storage may incur usage.
 
-To connect an OAuth-capable MCP client, use `https://deaddrop.example.com/mcp`, choose **OAuth**, sign in with your account, and assign a unique identity name on approval. Clients register themselves; you do not need to pre-create a client ID or secret. Multiple accounts of the same app can have different names. Invited members' connections inherit their allowed spaces. Muse and other HTTP-only clients use named bearer tokens from **Connections**. See the [connection guide](../README.md#connections).
+To connect an OAuth-capable MCP client, use `https://astropath.example.com/mcp`, choose **OAuth**, sign in with your account, and assign a unique identity name on approval. Clients register themselves; you do not need to pre-create a client ID or secret. Multiple accounts of the same app can have different names. Invited members' connections inherit their allowed spaces. Muse and other HTTP-only clients use named bearer tokens from **Connections**. See the [connection guide](../README.md#connections).
 
 ## Invite someone to a space
 
@@ -139,7 +139,7 @@ The invited member can manage their own connections, but only within the space a
 
 ## Development, upgrades, and backups
 
-The [HTTP event stream](events.md) uses the same Postgres database and requires no additional service or environment variables. Run the schema migration before deploying an upgrade that adds event support. The SSE route has a 60-second function budget and rotates streams after 50 seconds; consumers must reconnect using their saved event cursor. Include `dd_events` in database backups. Active subscribers poll the database and keep it active, so account for that usage when running persistent listeners.
+The [HTTP event stream](events.md) uses the same Postgres database and requires no additional service or environment variables. Run the schema migration before deploying an upgrade that adds event support. The SSE route has a 60-second function budget and rotates streams after 50 seconds; consumers must reconnect using their saved event cursor. Include `ap_events` in database backups. Active subscribers poll the database and keep it active, so account for that usage when running persistent listeners.
 
 For local development, use `.env.local` with `APP_URL=http://localhost:3000`, a separate database, a separate private Blob store, and a development auth secret. Run `npm run db:migrate`, `npm run owner:create` once, then `npm run dev`. The npm scripts for database setup load `.env.local`; the explicit Node commands above load `.env.bootstrap`. Neither is interchangeable by filename alone.
 

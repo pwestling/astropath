@@ -14,11 +14,11 @@ import { fileInput } from "./validation";
 import { store, type Attachment } from "./store";
 
 async function reserve(principal: Principal, raw: unknown) {
-  requireScope(principal, "deaddrop:write");
+  requireScope(principal, "astropath:write");
   const input = fileInput.parse(raw);
   input.space ??= principal.spaces?.[0] || "general";
   requireSpace(principal, input.space);
-  const spaces = await db.query("SELECT slug FROM dd_spaces WHERE slug=$1", [
+  const spaces = await db.query("SELECT slug FROM ap_spaces WHERE slug=$1", [
     input.space,
   ]);
   if (!spaces.rows.length)
@@ -26,7 +26,7 @@ async function reserve(principal: Principal, raw: unknown) {
   const id = randomUUID();
   const pathname = `attachments/${id}/${input.name}`;
   await db.query(
-    `INSERT INTO dd_files(id,space,name,content_type,size,pathname,principal_id) VALUES($1,$2,$3,$4,$5,$6,$7)`,
+    `INSERT INTO ap_files(id,space,name,content_type,size,pathname,principal_id) VALUES($1,$2,$3,$4,$5,$6,$7)`,
     [
       id,
       input.space,
@@ -62,9 +62,9 @@ export async function createUpload(principal: Principal, raw: unknown) {
 }
 
 export async function completeUpload(principal: Principal, id: string) {
-  requireScope(principal, "deaddrop:write");
+  requireScope(principal, "astropath:write");
   const result = await db.query<Attachment>(
-    "SELECT * FROM dd_files WHERE id=$1 AND principal_id=$2",
+    "SELECT * FROM ap_files WHERE id=$1 AND principal_id=$2",
     [id, principal.id],
   );
   const file = result.rows[0];
@@ -93,7 +93,7 @@ export async function completeUpload(principal: Principal, id: string) {
     );
   }
   await db.query(
-    "UPDATE dd_files SET status='ready',ready_at=now() WHERE id=$1",
+    "UPDATE ap_files SET status='ready',ready_at=now() WHERE id=$1",
     [id],
   );
   return { file_id: id, status: "ready" };

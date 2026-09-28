@@ -8,7 +8,7 @@ import type { Database } from "../src/lib/db";
 import type { Principal } from "../src/lib/policy";
 import { MemberStore } from "../src/lib/members";
 import { userPrincipal, connectionSpaces } from "../src/lib/access";
-import { DropStore } from "../src/lib/store";
+import { MessageStore } from "../src/lib/store";
 import { IdentityStore } from "../src/lib/identities";
 
 const engine = new PGlite();
@@ -33,14 +33,14 @@ const database: Database = {
     ),
 };
 const members = new MemberStore(database);
-const drops = new DropStore(database);
+const messages = new MessageStore(database);
 const owner: Principal = {
   id: "owner:owner",
   userId: "owner",
   name: "Owner",
   owner: true,
   spaces: null,
-  scopes: ["deaddrop:read", "deaddrop:write"],
+  scopes: ["astropath:read", "astropath:write"],
 };
 const password = "a-private-test-password";
 const input = {
@@ -55,7 +55,7 @@ async function inviteAndAccept() {
   await members.accept(tokenOf(invite.invite_url), password);
   const row = (
     await query<{ user_id: string }>(
-      "SELECT user_id FROM dd_members WHERE email=$1",
+      "SELECT user_id FROM ap_members WHERE email=$1",
       [input.email],
     )
   ).rows[0];
@@ -74,12 +74,12 @@ beforeAll(async () => {
   await engine.exec(schema);
   await engine.exec(schema);
   await query(
-    "INSERT INTO dd_spaces(slug,name) VALUES('personal','Personal'),('other','Other')",
+    "INSERT INTO ap_spaces(slug,name) VALUES('personal','Personal'),('other','Other')",
   );
 });
 beforeEach(async () => {
   await engine.exec(
-    'TRUNCATE dd_members,dd_connections,dd_drops,dd_files,dd_receipts,dd_activity,"user",account,session CASCADE',
+    'TRUNCATE ap_members,ap_connections,ap_messages,ap_files,ap_receipts,ap_activity,"user",account,session CASCADE',
   );
   await query(
     "INSERT INTO \"user\"(id,name,email) VALUES('owner','Owner','owner@example.com')",
@@ -137,7 +137,7 @@ it("activates exactly the invited identity and consumes the link once", async ()
   expect(await verifyPassword({ hash: account.password, password })).toBe(true);
   expect((await query('SELECT id FROM "user"')).rows).toHaveLength(2);
   expect(
-    (await query("SELECT invite_hash FROM dd_members")).rows[0].invite_hash,
+    (await query("SELECT invite_hash FROM ap_members")).rows[0].invite_hash,
   ).toBeNull();
 });
 
@@ -148,7 +148,7 @@ it("rejects expired, replaced, and disabled invitations", async () => {
   const replacement = await members.reinvite(owner, id);
   await expect(members.inspect(first)).rejects.toMatchObject({ status: 400 });
   await query(
-    "UPDATE dd_members SET invite_expires_at=now()-interval '1 second'",
+    "UPDATE ap_members SET invite_expires_at=now()-interval '1 second'",
   );
   await expect(
     members.accept(tokenOf(replacement.invite_url), password),
@@ -163,27 +163,27 @@ it("rejects expired, replaced, and disabled invitations", async () => {
 it("limits members to assigned data, defaults, and organization controls", async () => {
   const { principal } = await inviteAndAccept();
   expect(principal).toMatchObject({ owner: false, spaces: ["personal"] });
-  const own = await drops.create(principal, { title: "My note" });
-  expect(own.drop.space).toBe("personal");
-  const hidden = await drops.create(owner, {
+  const own = await messages.create(principal, { title: "My note" });
+  expect(own.message.space).toBe("personal");
+  const hidden = await messages.create(owner, {
     title: "Private owner note",
     space: "other",
   });
   expect(
-    (await drops.list(principal, {})).drops.map((drop) => drop.id),
-  ).toEqual([own.drop.id]);
-  await expect(drops.detail(principal, hidden.drop.id)).rejects.toMatchObject({
+    (await messages.list(principal, {})).messages.map((message) => message.id),
+  ).toEqual([own.message.id]);
+  await expect(messages.detail(principal, hidden.message.id)).rejects.toMatchObject({
     status: 404,
   });
   await expect(
-    drops.create(principal, { title: "Denied", space: "general" }),
+    messages.create(principal, { title: "Denied", space: "general" }),
   ).rejects.toMatchObject({ status: 404 });
-  await drops.update(principal, own.drop.id, { pinned: true });
+  await messages.update(principal, own.message.id, { pinned: true });
   await expect(
-    drops.update(principal, hidden.drop.id, { pinned: true }),
+    messages.update(principal, hidden.message.id, { pinned: true }),
   ).rejects.toMatchObject({ status: 404 });
   await expect(
-    drops.update({ ...principal, userId: undefined }, own.drop.id, {
+    messages.update({ ...principal, userId: undefined }, own.message.id, {
       pinned: true,
     }),
   ).rejects.toMatchObject({ status: 403 });
@@ -228,7 +228,7 @@ it("stores the member's space grant and creator on OAuth identities", async () =
   expect(
     (
       await query(
-        "SELECT spaces,created_by_user_id FROM dd_connections WHERE id=$1",
+        "SELECT spaces,created_by_user_id FROM ap_connections WHERE id=$1",
         [id],
       )
     ).rows[0],

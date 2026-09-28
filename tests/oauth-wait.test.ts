@@ -14,7 +14,7 @@ const id = "00000000-0000-4000-8000-000000000001";
 const claims = {
   sub: "owner",
   client_id: "client",
-  scope: "deaddrop:read deaddrop:write",
+  scope: "astropath:read astropath:write",
   [CONNECTION_CLAIM]: id,
 };
 beforeEach(() => {
@@ -25,7 +25,7 @@ beforeEach(() => {
     name: "Owner",
     owner: true,
     spaces: null,
-    scopes: ["deaddrop:read", "deaddrop:write"],
+    scopes: ["astropath:read", "astropath:write"],
   });
   vi.mocked(connectionSpaces).mockResolvedValue(["general"]);
 });
@@ -42,13 +42,13 @@ it("rechecks token expiry while waiting even after the JWT was initially verifie
 it("honors current named-connection scopes and space membership without writing every poll", async () => {
   vi.mocked(db.query).mockResolvedValue({
     rows: [
-      { id, name: "Claude Work", spaces: null, scopes: ["deaddrop:read"] },
+      { id, name: "Claude Work", spaces: null, scopes: ["astropath:read"] },
     ],
   });
   const current = await oauthPrincipal(claims, { touch: false });
   expect(current).toMatchObject({
     id,
-    scopes: ["deaddrop:read"],
+    scopes: ["astropath:read"],
     spaces: ["general"],
   });
   expect(vi.mocked(db.query).mock.calls[0][0]).toMatch(/^SELECT/);
@@ -68,7 +68,7 @@ it("does not recreate a deleted legacy connection during a wait", async () => {
   vi.mocked(db.query).mockResolvedValue({ rows: [] });
   await expect(
     oauthPrincipal(
-      { sub: "owner", client_id: "legacy", scope: "deaddrop:read" },
+      { sub: "owner", client_id: "legacy", scope: "astropath:read" },
       { touch: false },
     ),
   ).rejects.toMatchObject({ code: "connection_revoked" });

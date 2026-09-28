@@ -22,17 +22,17 @@ export async function overview(principal: Principal) {
     db.query(
       `SELECT count(*) FILTER (WHERE archived_at IS NULL AND parent_id IS NULL)::integer AS total,
       count(*) FILTER (WHERE pinned AND archived_at IS NULL)::integer AS pinned,
-      (SELECT count(*)::integer FROM dd_files WHERE status='ready' AND ($2::text[] IS NULL OR space=ANY($2))) AS files,
-      (SELECT COALESCE(sum(size),0)::text FROM dd_files WHERE status='ready' AND ($2::text[] IS NULL OR space=ANY($2))) AS storage_bytes,
-      count(*) FILTER (WHERE parent_id IS NULL AND archived_at IS NULL AND principal_id<>$1 AND NOT EXISTS (SELECT 1 FROM dd_receipts r WHERE r.drop_id=dd_drops.id AND r.principal_id=$1))::integer AS unread
-      FROM dd_drops WHERE $2::text[] IS NULL OR space=ANY($2)`,
+      (SELECT count(*)::integer FROM ap_files WHERE status='ready' AND ($2::text[] IS NULL OR space=ANY($2))) AS files,
+      (SELECT COALESCE(sum(size),0)::text FROM ap_files WHERE status='ready' AND ($2::text[] IS NULL OR space=ANY($2))) AS storage_bytes,
+      count(*) FILTER (WHERE parent_id IS NULL AND archived_at IS NULL AND principal_id<>$1 AND NOT EXISTS (SELECT 1 FROM ap_receipts r WHERE r.message_id=ap_messages.id AND r.principal_id=$1))::integer AS unread
+      FROM ap_messages WHERE $2::text[] IS NULL OR space=ANY($2)`,
       [principal.id, principal.spaces],
     ),
     listConnections(principal),
     db.query(
-      `SELECT a.* FROM dd_activity a WHERE $1::boolean
-      OR EXISTS(SELECT 1 FROM dd_drops d WHERE d.id::text=a.target_id AND d.space=ANY($2::text[]))
-      OR EXISTS(SELECT 1 FROM dd_connections c WHERE c.id::text=a.target_id AND c.created_by_user_id=$3)
+      `SELECT a.* FROM ap_activity a WHERE $1::boolean
+      OR EXISTS(SELECT 1 FROM ap_messages d WHERE d.id::text=a.target_id AND d.space=ANY($2::text[]))
+      OR EXISTS(SELECT 1 FROM ap_connections c WHERE c.id::text=a.target_id AND c.created_by_user_id=$3)
       ORDER BY a.id DESC LIMIT 20`,
       [principal.owner, principal.spaces, userId],
     ),
@@ -47,7 +47,7 @@ export async function overview(principal: Principal) {
 export async function listConnections(principal: Principal) {
   const userId = requireAccount(principal);
   const result = await db.query(
-    `SELECT id,name,kind,token_prefix,scopes,spaces,created_at,last_used_at,expires_at,revoked_at FROM dd_connections
+    `SELECT id,name,kind,token_prefix,scopes,spaces,created_at,last_used_at,expires_at,revoked_at FROM ap_connections
      WHERE $1::boolean OR created_by_user_id=$2 ORDER BY created_at DESC`,
     [principal.owner, userId],
   );
@@ -70,7 +70,7 @@ export async function createConnection(principal: Principal, raw: unknown) {
   for (const space of input.spaces || []) requireSpace(principal, space);
   if (input.spaces) {
     const spaces = await db.query(
-      "SELECT slug FROM dd_spaces WHERE slug=ANY($1::text[])",
+      "SELECT slug FROM ap_spaces WHERE slug=ANY($1::text[])",
       [input.spaces],
     );
     if (spaces.rows.length !== new Set(input.spaces).size)
@@ -82,7 +82,7 @@ export async function createConnection(principal: Principal, raw: unknown) {
   await db.transaction(async (tx) => {
     await reserveIdentityName(tx, input.name);
     await tx.query(
-      `INSERT INTO dd_connections(id,name,kind,token_hash,token_prefix,scopes,spaces,expires_at,created_by_user_id)
+      `INSERT INTO ap_connections(id,name,kind,token_hash,token_prefix,scopes,spaces,expires_at,created_by_user_id)
     VALUES($1,$2,'token',$3,$4,$5,$6,$7,$8)`,
       [
         id,
@@ -103,7 +103,7 @@ export async function createConnection(principal: Principal, raw: unknown) {
 export async function revokeConnection(principal: Principal, id: string) {
   const userId = requireAccount(principal);
   const result = await db.query<{ name: string }>(
-    "UPDATE dd_connections SET revoked_at=now() WHERE id=$1 AND ($2::boolean OR created_by_user_id=$3) RETURNING name",
+    "UPDATE ap_connections SET revoked_at=now() WHERE id=$1 AND ($2::boolean OR created_by_user_id=$3) RETURNING name",
     [z.uuid().parse(id), principal.owner, userId],
   );
   if (!result.rows[0])
@@ -113,9 +113,9 @@ export async function revokeConnection(principal: Principal, id: string) {
 }
 
 export async function listSpaces(principal: Principal) {
-  requireScope(principal, "deaddrop:read");
+  requireScope(principal, "astropath:read");
   const result = await db.query(
-    "SELECT * FROM dd_spaces WHERE $1::text[] IS NULL OR slug=ANY($1::text[]) ORDER BY name",
+    "SELECT * FROM ap_spaces WHERE $1::text[] IS NULL OR slug=ANY($1::text[]) ORDER BY name",
     [principal.spaces],
   );
   return { spaces: result.rows };
@@ -127,7 +127,7 @@ export async function createSpace(principal: Principal, raw: unknown) {
     .strict()
     .parse(raw);
   const result = await db.query(
-    "INSERT INTO dd_spaces(slug,name) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING *",
+    "INSERT INTO ap_spaces(slug,name) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING *",
     [input.slug, input.name],
   );
   if (!result.rows[0])

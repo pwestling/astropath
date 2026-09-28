@@ -25,7 +25,7 @@ export function checkOrigin(request: Request) {
     throw new AppError(
       403,
       "invalid_origin",
-      "This action must originate from Deaddrop.",
+      "This action must originate from Astropath.",
     );
   }
 }
@@ -43,12 +43,12 @@ export async function apiPrincipal(
 ): Promise<Principal> {
   const authorization = request.headers.get("authorization");
   if (authorization) {
-    const match = /^Bearer (dd_[A-Za-z0-9_-]{43})$/.exec(authorization);
+    const match = /^Bearer (ap_[A-Za-z0-9_-]{43})$/.exec(authorization);
     if (!match)
       throw new AppError(
         401,
         "invalid_token",
-        "Use Authorization: Bearer <Deaddrop token>.",
+        "Use Authorization: Bearer <Astropath token>.",
       );
     const result = await db.query<{
       id: string;
@@ -58,9 +58,9 @@ export async function apiPrincipal(
       created_by_user_id: string | null;
     }>(
       options.touch === false
-        ? `SELECT id,name,scopes,spaces,created_by_user_id FROM dd_connections WHERE token_hash=$1 AND revoked_at IS NULL
+        ? `SELECT id,name,scopes,spaces,created_by_user_id FROM ap_connections WHERE token_hash=$1 AND revoked_at IS NULL
            AND (expires_at IS NULL OR expires_at > now())`
-        : `UPDATE dd_connections SET last_used_at = now() WHERE token_hash=$1 AND revoked_at IS NULL
+        : `UPDATE ap_connections SET last_used_at = now() WHERE token_hash=$1 AND revoked_at IS NULL
            AND (expires_at IS NULL OR expires_at > now()) RETURNING id,name,scopes,spaces,created_by_user_id`,
       [hash(match[1])],
     );
@@ -130,9 +130,9 @@ export async function oauthPrincipal(
       scopes: string[];
     }>(
       options.touch === false
-        ? `SELECT id,name,spaces,scopes FROM dd_connections WHERE id=$1 AND oauth_user_id=$2
+        ? `SELECT id,name,spaces,scopes FROM ap_connections WHERE id=$1 AND oauth_user_id=$2
        AND oauth_authorization_client_id=$3 AND kind='oauth' AND revoked_at IS NULL`
-        : `UPDATE dd_connections SET last_used_at=now() WHERE id=$1 AND oauth_user_id=$2
+        : `UPDATE ap_connections SET last_used_at=now() WHERE id=$1 AND oauth_user_id=$2
        AND oauth_authorization_client_id=$3 AND kind='oauth' AND revoked_at IS NULL
        RETURNING id,name,spaces,scopes`,
       [identityId.data, claims.sub, clientId],
@@ -177,8 +177,8 @@ export async function oauthPrincipal(
     revoked_at: Date | null;
   }>(
     options.touch === false
-      ? `SELECT id,name,spaces,revoked_at FROM dd_connections WHERE oauth_client_id=$1`
-      : `INSERT INTO dd_connections (id,name,kind,oauth_client_id,scopes) VALUES ($1,$2,'oauth',$3,$4)
+      ? `SELECT id,name,spaces,revoked_at FROM ap_connections WHERE oauth_client_id=$1`
+      : `INSERT INTO ap_connections (id,name,kind,oauth_client_id,scopes) VALUES ($1,$2,'oauth',$3,$4)
      ON CONFLICT (oauth_client_id) DO UPDATE SET last_used_at=now() RETURNING id,name,spaces,revoked_at`,
     options.touch === false
       ? [clientId]
@@ -201,8 +201,8 @@ export async function oauthPrincipal(
 export async function rateLimit(principal: Principal) {
   const minute = Math.floor(Date.now() / 60000);
   const result = await db.query<{ count: number }>(
-    `INSERT INTO dd_rate_limits(key,count,expires_at) VALUES ($1,1,now()+interval '2 minutes')
-     ON CONFLICT(key) DO UPDATE SET count=dd_rate_limits.count+1 RETURNING count`,
+    `INSERT INTO ap_rate_limits(key,count,expires_at) VALUES ($1,1,now()+interval '2 minutes')
+     ON CONFLICT(key) DO UPDATE SET count=ap_rate_limits.count+1 RETURNING count`,
     [`${principal.id}:${minute}`],
   );
   if (result.rows[0].count > 120)
@@ -212,5 +212,5 @@ export async function rateLimit(principal: Principal) {
       "Too many requests. Try again in a minute.",
     );
   if (Math.random() < 0.01)
-    await db.query("DELETE FROM dd_rate_limits WHERE expires_at < now()");
+    await db.query("DELETE FROM ap_rate_limits WHERE expires_at < now()");
 }

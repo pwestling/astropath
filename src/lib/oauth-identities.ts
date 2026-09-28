@@ -29,7 +29,7 @@ export async function handleNamedConsent(
       throw new AppError(
         403,
         "invalid_origin",
-        "Approve connections from Deaddrop.",
+        "Approve connections from Astropath.",
       );
     const body = z
       .object({
@@ -118,7 +118,7 @@ export const oauthIdentityOptions = {
         message: "Invalid connection identity.",
       });
     const result = await db.query<{ id: string; spaces: string[] | null }>(
-      "SELECT id,spaces FROM dd_connections WHERE id=$1 AND oauth_user_id=$2 AND kind='oauth' AND revoked_at IS NULL",
+      "SELECT id,spaces FROM ap_connections WHERE id=$1 AND oauth_user_id=$2 AND kind='oauth' AND revoked_at IS NULL",
       [id.data, user.id],
     );
     if (!result.rows.length)

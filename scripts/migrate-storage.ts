@@ -17,7 +17,7 @@ async function main() {
     content_type: string;
     status: string;
   }>(
-    "SELECT pathname,size,content_type,status FROM dd_files ORDER BY created_at",
+    "SELECT pathname,size,content_type,status FROM ap_files ORDER BY created_at",
   );
   let copied = 0,
     verified = 0,

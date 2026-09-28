@@ -13,7 +13,7 @@ const base = process.env.SMOKE_URL || "http://localhost:3000";
 const space = `smoke-${randomUUID().slice(0, 8)}`;
 const principals = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
 const tokens = principals.map(() => mintToken());
-const client = new Client({ name: "Deaddrop smoke check", version: "1.0.0" });
+const client = new Client({ name: "Astropath smoke check", version: "1.0.0" });
 
 async function api(
   path: string,
@@ -42,24 +42,24 @@ async function api(
 }
 
 async function main() {
-  await pool.query("INSERT INTO dd_spaces(slug,name) VALUES($1,$2)", [
+  await pool.query("INSERT INTO ap_spaces(slug,name) VALUES($1,$2)", [
     space,
     "Smoke verification",
   ]);
   for (let index = 0; index < principals.length; index++) {
     await pool.query(
-      "INSERT INTO dd_connections(id,name,kind,token_hash,token_prefix,scopes,spaces) VALUES($1,$2,'token',$3,$4,$5,$6)",
+      "INSERT INTO ap_connections(id,name,kind,token_hash,token_prefix,scopes,spaces) VALUES($1,$2,'token',$3,$4,$5,$6)",
       [
         principals[index],
         `Smoke ${index}`,
         tokens[index].tokenHash,
         tokens[index].prefix,
-        index === 1 ? ["deaddrop:read"] : ["deaddrop:read", "deaddrop:write"],
+        index === 1 ? ["astropath:read"] : ["astropath:read", "astropath:write"],
         index === 2 ? ["general"] : [space],
       ],
     );
   }
-  assert.equal((await fetch(`${base}/api/v1/drops`)).status, 401);
+  assert.equal((await fetch(`${base}/api/v1/messages`)).status, 401);
   await api("connections", 0, "GET", undefined, 403);
   const payload = {
     title: "Smoke handoff",
@@ -68,23 +68,23 @@ async function main() {
   };
   const requests = await Promise.all(
     [0, 1, 2].map(() =>
-      api("drops", 0, "POST", payload, 201, {
+      api("messages", 0, "POST", payload, 201, {
         "Idempotency-Key": "concurrent-smoke",
       }),
     ),
   );
-  assert.equal(new Set(requests.map((r) => r.drop.id)).size, 1);
-  const id = requests[0].drop.id;
-  await api("drops", 0, "POST", { ...payload, body: "different" }, 409, {
+  assert.equal(new Set(requests.map((r) => r.message.id)).size, 1);
+  const id = requests[0].message.id;
+  await api("messages", 0, "POST", { ...payload, body: "different" }, 409, {
     "Idempotency-Key": "concurrent-smoke",
   });
-  await api("drops", 1, "POST", payload, 403);
-  await api(`drops/${id}`, 2, "GET", undefined, 404);
-  assert.equal((await api("drops?unread=true", 1)).drops.length, 1);
-  await api(`drops/${id}`, 1);
-  assert.equal((await api("drops?unread=true", 1)).drops.length, 1);
-  await api(`drops/${id}/acknowledge`, 1, "POST", {});
-  assert.equal((await api("drops?unread=true", 1)).drops.length, 0);
+  await api("messages", 1, "POST", payload, 403);
+  await api(`messages/${id}`, 2, "GET", undefined, 404);
+  assert.equal((await api("messages?unread=true", 1)).messages.length, 1);
+  await api(`messages/${id}`, 1);
+  assert.equal((await api("messages?unread=true", 1)).messages.length, 1);
+  await api(`messages/${id}/acknowledge`, 1, "POST", {});
+  assert.equal((await api("messages?unread=true", 1)).messages.length, 0);
   console.log(
     "PASS: HTTP authentication, spaces, read-only access, concurrent retries, receipts",
   );
@@ -104,7 +104,7 @@ async function main() {
     const reader = stream.body!.getReader();
     const decoder = new TextDecoder();
     let received = "";
-    while (!received.includes("event: drop.created")) {
+    while (!received.includes("event: message.created")) {
       const chunk = await reader.read();
       assert.equal(
         chunk.done,
@@ -167,7 +167,7 @@ async function main() {
     201,
   );
   await api(
-    "drops",
+    "messages",
     0,
     "POST",
     {
@@ -178,7 +178,7 @@ async function main() {
     201,
   );
   const download = await api(`files/${upload.file_id}/download`, 1);
-  assert.equal((await api("drops?with_files=true", 1)).drops.length, 1);
+  assert.equal((await api("messages?with_files=true", 1)).messages.length, 1);
   const downloaded = await fetch(download.url);
   assert.equal(
     downloaded.ok,
@@ -199,12 +199,12 @@ async function main() {
   const tools = await client.listTools();
   assert.equal(tools.tools.length, 15);
   const found = await client.callTool({
-    name: "list_drops",
+    name: "list_messages",
     arguments: { space },
   });
   assert.notEqual(found.isError, true);
   const result = await client.callTool({
-    name: "read_drop",
+    name: "read_message",
     arguments: { id },
   });
   assert.notEqual(result.isError, true);
@@ -224,7 +224,7 @@ async function main() {
     return JSON.parse(text.text);
   }
   assert.equal((await tool("get_identity")).identity.id, principals[0]);
-  const conversation = await tool("leave_drop", {
+  const conversation = await tool("send_message", {
     title: "Chat smoke",
     body: "Question",
     space,
@@ -232,26 +232,26 @@ async function main() {
     idempotency_key: "chat-root",
   });
   const fast = await api(
-    `drops/${conversation.drop.id}/replies`,
+    `messages/${conversation.message.id}/replies`,
     3,
     "POST",
     { body: "Fast response" },
     201,
     { "Idempotency-Key": "fast-answer" },
   );
-  assert.equal(fast.drop.recipient, "Smoke 0");
+  assert.equal(fast.message.recipient, "Smoke 0");
   const caught = await tool("wait_for_reply", {
-    drop_id: conversation.drop.id,
+    message_id: conversation.message.id,
     timeout_seconds: 0,
   });
   assert.deepEqual(
     caught.messages.map((m: { id: string }) => m.id),
-    [fast.drop.id],
+    [fast.message.id],
   );
   assert.equal(
     (
       await tool("wait_for_reply", {
-        drop_id: conversation.drop.id,
+        message_id: conversation.message.id,
         after: caught.cursor,
         timeout_seconds: 0,
       })
@@ -259,13 +259,13 @@ async function main() {
     "timeout",
   );
   const pending = tool("wait_for_reply", {
-    drop_id: conversation.drop.id,
+    message_id: conversation.message.id,
     after: caught.cursor,
     timeout_seconds: 10,
   });
   const later = (async () => {
     await delay(300);
-    const path = `drops/${fast.drop.id}/replies`;
+    const path = `messages/${fast.message.id}/replies`;
     const answer = await api(
       path,
       3,
@@ -284,41 +284,41 @@ async function main() {
           201,
           { "Idempotency-Key": "live-answer" },
         )
-      ).drop.id,
-      answer.drop.id,
+      ).message.id,
+      answer.message.id,
     );
     return answer;
   })();
   const [received, sent] = await Promise.all([pending, later]);
   assert.deepEqual(
     received.messages.map((m: { id: string }) => m.id),
-    [sent.drop.id],
+    [sent.message.id],
   );
-  const page = await tool("read_thread", { drop_id: sent.drop.id, limit: 2 });
+  const page = await tool("read_thread", { message_id: sent.message.id, limit: 2 });
   assert.equal(page.messages.length, 2);
   assert.equal(
     (
       await tool("read_thread", {
-        drop_id: conversation.drop.id,
+        message_id: conversation.message.id,
         page: page.next_page,
       })
     ).messages[0].id,
-    sent.drop.id,
+    sent.message.id,
   );
-  const reply = await tool("reply_to_drop", {
-    drop_id: sent.drop.id,
+  const reply = await tool("reply_to_message", {
+    message_id: sent.message.id,
     body: "Received",
     idempotency_key: "chat-confirmation",
   });
-  assert.equal(reply.drop.recipient, "Smoke 3");
+  assert.equal(reply.message.recipient, "Smoke 3");
   assert.equal(
     (
-      await api(`drops/${conversation.drop.id}/wait`, 3, "POST", {
+      await api(`messages/${conversation.message.id}/wait`, 3, "POST", {
         after: sent.cursor,
         timeout_seconds: 0,
       })
     ).messages[0].id,
-    reply.drop.id,
+    reply.message.id,
   );
   assert.equal(
     (
@@ -332,18 +332,18 @@ async function main() {
     2,
   );
   assert.equal(
-    (await api(`drops/${conversation.drop.id}/thread`, 1)).messages.length,
+    (await api(`messages/${conversation.message.id}/thread`, 1)).messages.length,
     4,
   );
   await api(
-    `drops/${conversation.drop.id}/wait`,
+    `messages/${conversation.message.id}/wait`,
     2,
     "POST",
     { timeout_seconds: 0 },
     404,
   );
   await api(
-    `drops/${conversation.drop.id}/replies`,
+    `messages/${conversation.message.id}/replies`,
     1,
     "POST",
     { body: "Denied" },
@@ -397,7 +397,7 @@ async function main() {
     const waiting = await legacy("tools/call", {
       name: "wait_for_reply",
       arguments: {
-        drop_id: conversation.drop.id,
+        message_id: conversation.message.id,
         after: reply.cursor,
         timeout_seconds: 0,
       },
@@ -409,13 +409,13 @@ async function main() {
   const revokedWait = client.callTool({
     name: "wait_for_reply",
     arguments: {
-      drop_id: conversation.drop.id,
+      message_id: conversation.message.id,
       after: reply.cursor,
       timeout_seconds: 10,
     },
   });
   await delay(300);
-  await pool.query("UPDATE dd_connections SET revoked_at=now() WHERE id=$1", [
+  await pool.query("UPDATE ap_connections SET revoked_at=now() WHERE id=$1", [
     principals[0],
   ]);
   const revokedResult = await revokedWait;
@@ -429,28 +429,28 @@ main()
   .finally(async () => {
     await client.close().catch(() => {});
     const files = await pool.query<{ pathname: string }>(
-      "SELECT pathname FROM dd_files WHERE space=$1",
+      "SELECT pathname FROM ap_files WHERE space=$1",
       [space],
     );
     for (const file of files.rows) await deleteFile(file.pathname);
     await pool.query(
-      "DELETE FROM dd_receipts WHERE drop_id IN (SELECT id FROM dd_drops WHERE space=$1)",
+      "DELETE FROM ap_receipts WHERE message_id IN (SELECT id FROM ap_messages WHERE space=$1)",
       [space],
     );
-    await pool.query("DELETE FROM dd_files WHERE space=$1", [space]);
+    await pool.query("DELETE FROM ap_files WHERE space=$1", [space]);
     await pool.query(
-      "DELETE FROM dd_activity WHERE target_id IN (SELECT id::text FROM dd_drops WHERE space=$1)",
+      "DELETE FROM ap_activity WHERE target_id IN (SELECT id::text FROM ap_messages WHERE space=$1)",
       [space],
     );
-    await pool.query("DELETE FROM dd_drops WHERE space=$1", [space]);
+    await pool.query("DELETE FROM ap_messages WHERE space=$1", [space]);
     await pool.query(
-      "DELETE FROM dd_rate_limits WHERE split_part(key,':',1)=ANY($1::text[])",
+      "DELETE FROM ap_rate_limits WHERE split_part(key,':',1)=ANY($1::text[])",
       [principals],
     );
-    await pool.query("DELETE FROM dd_connections WHERE id=ANY($1::uuid[])", [
+    await pool.query("DELETE FROM ap_connections WHERE id=ANY($1::uuid[])", [
       principals,
     ]);
-    await pool.query("DELETE FROM dd_spaces WHERE slug=$1", [space]);
+    await pool.query("DELETE FROM ap_spaces WHERE slug=$1", [space]);
     await pool.end();
   })
   .catch((error: Error) => {

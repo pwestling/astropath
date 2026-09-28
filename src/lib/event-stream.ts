@@ -92,7 +92,7 @@ export async function eventResponse(
               const known = error instanceof AppError;
               if (!known)
                 console.error(
-                  "Deaddrop event stream failed",
+                  "Astropath event stream failed",
                   error instanceof Error ? error.message : "Unknown error",
                 );
               send("stream_error", {

@@ -89,9 +89,9 @@ async function main() {
     { slug: nextSpace, name: "Member Moved" },
     201,
   );
-  const privateDrop = (
+  const privateMessage = (
     await request(
-      "/api/v1/drops",
+      "/api/v1/messages",
       owner,
       {
         title: `Owner secret ${suffix}`,
@@ -100,14 +100,14 @@ async function main() {
       },
       201,
     )
-  ).data.drop;
+  ).data.message;
   const ownerToken = (
     await request(
       "/api/v1/connections",
       owner,
       {
         name: `Owner Secret App ${suffix}`,
-        scopes: ["deaddrop:read", "deaddrop:write"],
+        scopes: ["astropath:read", "astropath:write"],
       },
       201,
     )
@@ -167,7 +167,7 @@ async function main() {
     member,
     {
       name: `Denied ${suffix}`,
-      scopes: ["deaddrop:read"],
+      scopes: ["astropath:read"],
       spaces: ["general"],
     },
     404,
@@ -178,7 +178,7 @@ async function main() {
       member,
       {
         name: `Member App ${suffix}`,
-        scopes: ["deaddrop:read", "deaddrop:write"],
+        scopes: ["astropath:read", "astropath:write"],
         spaces: null,
       },
       201,
@@ -200,7 +200,7 @@ async function main() {
   await request(
     "/api/v1/connections",
     "",
-    { name: "Forbidden delegation", scopes: ["deaddrop:read"] },
+    { name: "Forbidden delegation", scopes: ["astropath:read"] },
     403,
     "POST",
     memberToken.token,
@@ -218,27 +218,27 @@ async function main() {
     ),
     [memberToken.id],
   );
-  const ownDrop = (
+  const ownMessage = (
     await request(
-      "/api/v1/drops",
+      "/api/v1/messages",
       "",
       { title: "Member default space" },
       201,
       "POST",
       memberToken.token,
     )
-  ).data.drop;
-  assert.equal(ownDrop.space, space);
-  await request(`/api/v1/drops/${privateDrop.id}`, member, undefined, 404);
+  ).data.message;
+  assert.equal(ownMessage.space, space);
+  await request(`/api/v1/messages/${privateMessage.id}`, member, undefined, 404);
   await request(
-    `/api/v1/drops/${privateDrop.id}`,
+    `/api/v1/messages/${privateMessage.id}`,
     member,
     { pinned: true },
     404,
     "PATCH",
   );
   await request(
-    `/api/v1/drops/${ownDrop.id}`,
+    `/api/v1/messages/${ownMessage.id}`,
     member,
     { pinned: true },
     200,
@@ -257,8 +257,8 @@ async function main() {
   );
   const privateFile = randomUUID();
   await pool.query(
-    "INSERT INTO dd_files(id,space,name,content_type,size,pathname,principal_id,status,drop_id) VALUES($1,'general','private.txt','text/plain',3,$2,'owner:test','ready',$3)",
-    [privateFile, `test/${privateFile}`, privateDrop.id],
+    "INSERT INTO ap_files(id,space,name,content_type,size,pathname,principal_id,status,message_id) VALUES($1,'general','private.txt','text/plain',3,$2,'owner:test','ready',$3)",
+    [privateFile, `test/${privateFile}`, privateMessage.id],
   );
   await request(
     `/api/v1/files/${privateFile}/download`,
@@ -301,7 +301,7 @@ async function main() {
       client_id: clientId,
       redirect_uri: redirectUri,
       response_type: "code",
-      scope: "openid offline_access deaddrop:read deaddrop:write",
+      scope: "openid offline_access astropath:read astropath:write",
       resource: `${base}/mcp`,
       code_challenge: createHash("sha256").update(verifier).digest("base64url"),
       code_challenge_method: "S256",
@@ -364,12 +364,12 @@ async function main() {
     assert.ok(JSON.stringify(spaces).includes(space));
     assert.ok(!JSON.stringify(spaces).includes('"slug":"general"'));
     const denied = await client.callTool({
-      name: "read_drop",
-      arguments: { id: privateDrop.id },
+      name: "read_message",
+      arguments: { id: privateMessage.id },
     });
     assert.equal(denied.isError, true);
     const note = await client.callTool({
-      name: "leave_drop",
+      name: "send_message",
       arguments: { title: "Member MCP default" },
     });
     assert.notEqual(note.isError, true);

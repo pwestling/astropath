@@ -13,7 +13,7 @@ export interface Principal {
 export const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 export function mintToken() {
-  const token = `dd_${randomBytes(32).toString("base64url")}`;
+  const token = `ap_${randomBytes(32).toString("base64url")}`;
   return { token, tokenHash: hash(token), prefix: token.slice(0, 11) };
 }
 export function requireScope(principal: Principal, scope: string) {
@@ -26,7 +26,7 @@ export function requireScope(principal: Principal, scope: string) {
 }
 export function requireSpace(principal: Principal, space: string) {
   if (principal.spaces && !principal.spaces.includes(space))
-    throw new AppError(404, "not_found", "Space or drop not found.");
+    throw new AppError(404, "not_found", "Space or message not found.");
 }
 
 export function requireAccount(principal: Principal) {

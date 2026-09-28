@@ -18,24 +18,18 @@ it.each([
   },
 );
 
-it("preserves named identities from the original token namespace on another domain", async () => {
-  vi.stubEnv("APP_URL", "https://handoffs.example.com");
-  const { oauthConnectionClaim, LEGACY_CONNECTION_CLAIM } =
+it("reads only the configured OAuth identity namespace", async () => {
+  vi.stubEnv("APP_URL", "https://astropath.example.com");
+  const { oauthConnectionClaim, CONNECTION_CLAIM } =
     await import("../src/lib/identities");
-  expect(
-    oauthConnectionClaim({ [LEGACY_CONNECTION_CLAIM]: "existing-id" }),
-  ).toBe("existing-id");
-  expect(oauthConnectionClaim({})).toBeUndefined();
-});
-
-it("does not fall back to an older identity when a new claim is malformed", async () => {
-  vi.stubEnv("APP_URL", "https://handoffs.example.com");
-  const { oauthConnectionClaim, CONNECTION_CLAIM, LEGACY_CONNECTION_CLAIM } =
-    await import("../src/lib/identities");
+  expect(oauthConnectionClaim({ [CONNECTION_CLAIM]: "current-id" })).toBe(
+    "current-id",
+  );
   expect(
     oauthConnectionClaim({
-      [CONNECTION_CLAIM]: null,
-      [LEGACY_CONNECTION_CLAIM]: "existing-id",
+      "https://deaddrop.thehivemind5.com/connection": "old-id",
     }),
-  ).toBeNull();
+  ).toBeUndefined();
+  expect(oauthConnectionClaim({ [CONNECTION_CLAIM]: null })).toBeNull();
+  expect(oauthConnectionClaim({})).toBeUndefined();
 });
