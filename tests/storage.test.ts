@@ -1,11 +1,24 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { signedUpload, storageProvider } from "../src/lib/storage";
+import { r2Object, signedUpload, storageProvider } from "../src/lib/storage";
 
 afterEach(() => vi.unstubAllEnvs());
 
 it("rejects misspelled providers instead of silently sending files elsewhere", () => {
   vi.stubEnv("STORAGE_PROVIDER", "R2");
   expect(storageProvider).toThrow("STORAGE_PROVIDER");
+});
+
+it("keeps development R2 objects under their own prefix", () => {
+  vi.stubEnv("R2_BUCKET", "private-test");
+  expect(r2Object("attachments/123/photo.png")).toEqual({
+    Bucket: "private-test",
+    Key: "attachments/123/photo.png",
+  });
+  vi.stubEnv("R2_KEY_PREFIX", "astropath-dev/");
+  expect(r2Object("attachments/123/photo.png")).toEqual({
+    Bucket: "private-test",
+    Key: "astropath-dev/attachments/123/photo.png",
+  });
 });
 
 it("binds R2 upload permissions to the exact object, size, MIME type and no-overwrite condition", async () => {

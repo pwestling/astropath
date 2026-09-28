@@ -43,7 +43,11 @@ export function r2Client() {
 }
 
 export function r2Object(pathname: string) {
-  return { Bucket: required("R2_BUCKET"), Key: pathname };
+  const prefix = process.env.R2_KEY_PREFIX?.replace(/^\/+|\/+$/g, "");
+  return {
+    Bucket: required("R2_BUCKET"),
+    Key: prefix ? `${prefix}/${pathname}` : pathname,
+  };
 }
 
 export function missingObject(error: unknown) {
