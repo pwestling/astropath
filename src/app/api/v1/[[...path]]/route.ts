@@ -29,6 +29,7 @@ import {
   assertTenantMember,
 } from "@/lib/tenants";
 import { requireAccount } from "@/lib/policy";
+import { knowledge } from "@/lib/knowledge";
 
 const members = new MemberStore(db);
 
@@ -83,6 +84,46 @@ async function handle(
         path[2],
         await jsonBody(request),
       );
+    else if (route === "agent-sessions" && method === "POST") {
+      result = await knowledge.registerSession(
+        principal,
+        await jsonBody(request),
+      );
+      status = 201;
+    } else if (route === "topics" && method === "POST") {
+      result = await knowledge.ensureTopic(principal, await jsonBody(request));
+      status = 201;
+    } else if (route === "topics" && method === "GET")
+      result = await knowledge.listTopics(principal, {
+        space: url.searchParams.get("space") ?? undefined,
+        parent_id: url.searchParams.get("parent_id") ?? undefined,
+        q: url.searchParams.get("q") ?? undefined,
+        include_archived: url.searchParams.get("include_archived") === "true",
+        after: url.searchParams.get("after") ?? undefined,
+        limit: Number(url.searchParams.get("limit") ?? 30),
+      });
+    else if (path[0] === "topics" && path.length === 2 && method === "GET")
+      result = await knowledge.readTopic(principal, path[1]);
+    else if (path[0] === "topics" && path.length === 2 && method === "PATCH")
+      result = await knowledge.archiveTopic(
+        principal,
+        path[1],
+        await jsonBody(request),
+      );
+    else if (route === "topic-notes" && method === "POST") {
+      result = await knowledge.appendNote(principal, await jsonBody(request));
+      status = 201;
+    } else if (route === "topic-notes" && method === "GET")
+      result = await knowledge.listNotes(principal, {
+        topic_id: url.searchParams.get("topic_id") ?? undefined,
+        space: url.searchParams.get("space") ?? undefined,
+        include_descendants:
+          url.searchParams.get("include_descendants") !== "false",
+        include_archived: url.searchParams.get("include_archived") === "true",
+        q: url.searchParams.get("q") ?? undefined,
+        before: url.searchParams.get("before") ?? undefined,
+        limit: Number(url.searchParams.get("limit") ?? 30),
+      });
     else if (route === "skills" && method === "GET")
       result = await skills.list(principal, {
         space: url.searchParams.get("space") ?? undefined,

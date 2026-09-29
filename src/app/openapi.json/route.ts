@@ -3,6 +3,7 @@ import { appUrl } from "@/lib/config";
 import { messageInput, fileInput } from "@/lib/validation";
 import { replyInput, waitMessagesInput, waitReplyInput } from "@/lib/chat";
 import { publishSkillInput, deprecateSkillInput } from "@/lib/skills";
+import { knowledgePaths } from "@/lib/knowledge-openapi";
 
 export const dynamic = "force-dynamic";
 export function GET() {
@@ -59,6 +60,7 @@ export function GET() {
         },
       },
       paths: {
+        ...knowledgePaths(),
         "/skills": {
           get: {
             summary: "List accessible skills",

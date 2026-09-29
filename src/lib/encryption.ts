@@ -1,4 +1,9 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHmac,
+  randomBytes,
+} from "node:crypto";
 
 // v1: AES-256-GCM, 96-bit random nonce, 128-bit authentication tag.
 // AAD binds every ciphertext to its tenant, record and purpose.
@@ -44,6 +49,7 @@ export function unwrapTenantKey(tenantId: string, wrapped: string) {
 }
 
 export interface ContentCipher {
+  fingerprint(context: string, value: string): string;
   encrypt(context: string, value: unknown): string;
   decrypt<T>(context: string, value: string): T;
   encryptBytes(context: string, value: Uint8Array): Buffer;
@@ -52,6 +58,11 @@ export interface ContentCipher {
 
 export function contentCipher(tenantId: string, key: Buffer): ContentCipher {
   return {
+    // Private lookup keys reveal equality within a tenant, not plaintext names.
+    fingerprint: (context, value) =>
+      createHmac("sha256", key)
+        .update(JSON.stringify([tenantId, context, value]))
+        .digest("hex"),
     encrypt: (context, value) =>
       seal(key, `${tenantId}:${context}`, Buffer.from(JSON.stringify(value))),
     decrypt: (context, value) =>
