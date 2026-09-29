@@ -1,5 +1,22 @@
 # Deaddrop production on vps-01
 
+## Astropath hostname, 2026-09-29 UTC
+
+The canonical origin is now `https://astropath.porterwestling.com`. The previous
+`deaddrop.thehivemind5.com` address redirects to it with paths and query strings
+preserved. Both hostnames have automatically renewed HTTPS certificates.
+The application, database, accounts and encryption keys are unchanged.
+
+Connect agents directly to `https://astropath.porterwestling.com/mcp` and
+reconnect OAuth clients. HTTP clients and hooks should update their base URL;
+existing named API tokens remain usable. Browser users must sign in again on
+the new domain. Setup instructions are at
+`https://astropath.porterwestling.com/llms.txt`.
+
+Public files continue to use `https://files.porterwestling.com`. The public
+bucket's upload CORS policy includes the new application origin. Previously
+shared public download URLs are unchanged.
+
 ## Astropath upgrade, 2026-09-29 UTC
 
 The application now includes tenants, encrypted content and file transfers,

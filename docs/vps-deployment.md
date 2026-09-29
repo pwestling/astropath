@@ -1,6 +1,7 @@
 # Deploy Astropath on a VPS
 
-The live `deaddrop.thehivemind5.com` instance runs on Porter's NixOS `vps-01`.
+The live `astropath.porterwestling.com` instance runs on Porter's NixOS `vps-01`.
+The previous `deaddrop.thehivemind5.com` address redirects to it.
 See [its deployment record](vps-01-migration.md) and use
 `scripts/deploy-vps-01.sh` for that instance. The guide below remains the
 general-purpose deployment path, including the older RackNerd script.

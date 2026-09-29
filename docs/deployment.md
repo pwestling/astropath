@@ -164,6 +164,8 @@ For updates:
 
 Keep `APP_URL` and `BETTER_AUTH_SECRET` stable. To change domains, add and verify the new domain, update `APP_URL`, redeploy, and reconnect OAuth clients to the new `/mcp` URL. Tokens issued for the old origin have a different issuer/resource. Update HTTP clients' base URLs as well. Change the owner's password in authenticated **Settings**; changing an environment variable does not change the password or rename the database account.
 
+Use one canonical origin and redirect alternate hostnames to it, preserving paths and query strings. Verify the new hostname's HTTPS certificate before switching `APP_URL`. If public uploads are enabled, allow the new origin in the public R2 bucket's PUT CORS rule. Update agent hooks and HTTP clients to the new origin directly: cross-origin redirects may drop Authorization headers. Existing named API tokens remain usable if still valid; OAuth clients must reconnect and browser users must sign in at the new domain. Preserve the database and encryption/authentication secrets during a hostname change.
+
 Monitor database and Blob usage and retain backups of both. Abandoned uploads are retained; automatic retention/garbage collection is not implemented.
 
 ## Troubleshooting

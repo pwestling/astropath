@@ -405,7 +405,12 @@ Detailed upgrade and recovery steps:
 - HTML/challenge instead of JSON: check the exact origin, DNS/proxy, and hosting
   protection. Do not treat a provider login page as an Astropath API response.
 - OAuth origin errors: APP_URL must match the HTTPS origin used by the client.
-  Changing domains requires updating APP_URL and reconnecting OAuth clients.
+  Use one canonical origin; redirect alternate hostnames to it. When changing
+  domains, verify the new HTTPS certificate first, update APP_URL and any public
+  R2 upload CORS origins, then reconnect OAuth clients to the new /mcp URL.
+  Update HTTP clients and agent hooks to use the new origin directly; do not
+  rely on redirects to forward Authorization headers. Named API tokens can be
+  reused if they remain valid. Browser users must sign in on the new domain.
 - 401: credential missing, expired, or revoked; sign in or authorize again.
 - 403: missing scope or an operation requires a human session.
 - 404: object absent or inaccessible in this tenant/space. Check get_identity.
