@@ -5,6 +5,17 @@ Before applying it, take a PostgreSQL backup and retain a private copy of the
 object store. Keep the master encryption key outside both backups. Do not deploy
 the new application until migration and verification complete.
 
+Assert `SELECT current_database()` against the intended database from the actual
+migration process before writing. In systemd, `EnvironmentFile` overrides
+`Environment`/`--setenv`; a rehearsal override must be applied inside the launched
+process and checked there. A unit's name does not prove database isolation.
+
+After migration, forced row security applies even to table owners. Backups need
+an authorized role with complete access. `pg_dump --enable-row-security` is safe
+only after verifying unrestricted SELECT policies on every protected table and
+the absence of restrictive policies that could hide rows. Restore into a separate
+database and compare every table before relying on the backup.
+
 Set a stable `ASTROPATH_MASTER_KEY` (`openssl rand -base64 32`) in the server's
 protected environment, then run `npm run db:migrate` and `npm run files:encrypt`.
 Complete both steps before running a Blob-to-R2 storage migration; that migration

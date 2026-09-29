@@ -1,5 +1,41 @@
 # Deaddrop production on vps-01
 
+## Astropath upgrade, 2026-09-29 UTC
+
+The application now includes tenants, encrypted content and file transfers,
+hierarchical knowledge topics, session-authored notes, and regular agent capture
+templates. The implementation is in commit `b2c493f`. The canonical hostname is
+unchanged. Public setup instructions are at `/llms.txt`; downloadable client
+instructions are at `/integrations/README.txt`. Templates require installation
+and authorization in each client. ChatGPT writes retain their normal approvals.
+
+An operator error during the intended rehearsal let systemd's production
+`EnvironmentFile` override a `--setenv DATABASE_URL` value, so the migration
+reached production. The old app was stopped when this was discovered, another
+protected database backup was taken, and file locations were corrected and
+verified before activation. Original objects were preserved. The actual clone
+was subsequently migrated with an in-process database override and an explicit
+`current_database()` assertion. Future rehearsals must assert the actual database
+identity before any write.
+
+Verification before activation confirmed all migrated message contents, file
+metadata and bytes, receipts, events, and activity. The public smoke test passed
+authentication, scopes, retries, SSE, MCP/chat compatibility, encrypted file round
+trips, and token revocation. All 85 automated tests, TypeScript, the skill validator,
+and production builds passed. A deployment milestone was saved with session
+attribution and verified through MCP creation, HTTP exact retry, and readback.
+
+Legacy connections were deliberately revoked by the upgrade; reconnect agents.
+Database permissions retain a restricted runtime login and non-login tenant role.
+The backup job was updated for forced row security: it checks complete read
+policies and rejects restrictive SELECT policies before dumping. An encrypted
+backup was downloaded, decrypted, and restored in isolation; all 30 table counts
+and content fingerprints matched production. Recovery materials and original
+objects remain protected. No legacy service or source storage was retired.
+Rollback after new writes requires preserving them before restoring an old backup.
+
+The record below describes the earlier hosting migration and is historical.
+
 Recorded 2026-09-28 UTC. The working Deaddrop app, production DNS, and database
 moved from RackNerd/Neon to the DigitalOcean NixOS host `vps-01`. The existing
 private Cloudflare R2 bucket remains the file store. The canonical `APP_URL`,

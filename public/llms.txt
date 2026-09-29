@@ -331,6 +331,18 @@ in isolation. Use npm ci and the verification commands above. Run db:migrate
 before deploying code that requires new schema. Builds and deploy scripts do not
 run migrations automatically. Do not run owner:create again.
 
+Before a rehearsal, assert SELECT current_database() against the intended clone
+from the actual migration process. With systemd, EnvironmentFile values override
+Environment/--setenv values; apply rehearsal overrides inside the launched process
+and verify them before any write. Never rely on a unit name as an isolation check.
+
+Astropath forces row-level security even for table owners. A complete pg_dump
+needs an authorized backup role that can read every row. If using
+--enable-row-security, first verify unrestricted read policies for every protected
+table and no restrictive policies that could filter rows. Restore a backup into
+an isolated database and compare all tables; a successful upload alone is not
+proof of a complete backup. Keep the master key recoverable separately.
+
 For older Deaddrop installations, stop writers and follow both the database and
 file encryption migrations before starting Astropath. Run db:migrate and then
 files:encrypt with the same stable master key. Retain original objects for the
