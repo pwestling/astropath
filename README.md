@@ -119,7 +119,30 @@ Subscribe to `/api/v1/events?space=general` with a read-capable bearer token for
 
 See the [event subscription guide](docs/events.md) for payloads, replay behavior, and a runnable Node.js listener.
 
-### Original files
+### Public files
+
+Use **Public files → Upload publicly → Copy URL**, or the MCP tool
+`create_public_upload`, to upload an original file into a separate public R2 bucket.
+The returned `public_url` is a stable download URL requiring no Astropath login,
+signature, redirect, or running app. This is an explicit publishing action.
+
+For HTTP clients, `POST /api/v1/public-files/uploads` with
+`{name, content_type, size, space}`. PUT the original bytes to `upload_url` with the
+returned headers, then share `public_url` after the PUT succeeds. Do not send the
+Astropath Authorization header to R2. Browsers supply Content-Length themselves.
+The upload permission lasts one hour and permits one new object, up to 4 GiB.
+Files are downloadable immediately after upload and are not encrypted by Astropath.
+R2 still provides its own storage encryption. These uploads create no inbox file;
+save the URL in a message or knowledge note if you want a durable reference.
+
+Configure `R2_PUBLIC_ACCOUNT_ID`, `R2_PUBLIC_BUCKET`, `R2_PUBLIC_BASE_URL`,
+`R2_PUBLIC_ACCESS_KEY_ID`, and `R2_PUBLIC_SECRET_ACCESS_KEY`. Use a dedicated bucket
+and bucket-scoped Object Read & Write credentials. Set the base URL to its public
+HTTPS origin, preferably an R2 custom domain. See [public upload setup](docs/public-files.md)
+for CORS, configuration, client examples, and verification. No database migration
+is needed. Private attachments keep using the existing encrypted upload path.
+
+### Original private files
 
 1. `POST /api/v1/files/uploads` with `{name, content_type, size, space}`.
 2. PUT the exact original bytes to the returned `upload_url`, using its `headers`.

@@ -27,6 +27,7 @@ import {
   Send,
   Settings,
   ShieldCheck,
+  Upload,
   Sparkles,
   Star,
   Terminal,
@@ -38,12 +39,14 @@ import { api, bytes, relative } from "./api";
 import { authClient } from "@/lib/auth-client";
 import { MemberSettings } from "./member-settings";
 import { TenantSwitcher, PlatformTenants } from "./tenant-switcher";
+import { PublicFilesPanel } from "./public-files-panel";
 import { KnowledgePanel } from "./knowledge-panel";
 import type { Message, Attachment } from "@/lib/store";
 
 type Section =
   | "inbox"
   | "knowledge"
+  | "public-files"
   | "starred"
   | "archive"
   | "connections"
@@ -84,6 +87,7 @@ interface Space {
 const sectionTitle: Record<Section, string> = {
   inbox: "Inbox",
   knowledge: "Knowledge",
+  "public-files": "Public files",
   starred: "Starred",
   archive: "Archive",
   connections: "Connections",
@@ -235,6 +239,12 @@ export function Console({
                 count: undefined,
               },
               {
+                id: "public-files",
+                icon: Upload,
+                label: "Public files",
+                count: undefined,
+              },
+              {
                 id: "archive",
                 icon: Archive,
                 label: "Archive",
@@ -327,17 +337,19 @@ export function Console({
               <p>
                 {section === "inbox"
                   ? "Notes, files, and handoffs. Ready when you are."
-                  : section === "knowledge"
-                    ? "Topics that grow with your work. Knowledge with a history."
-                    : section === "connections"
-                      ? "Give your apps a way in. Keep control of their access."
-                      : section === "activity"
-                        ? "A clear record of what arrived and who left it."
-                        : section === "settings"
-                          ? "Make this space yours."
-                          : section === "starred"
-                            ? "The things you want to keep close."
-                            : "Finished handoffs, safely out of the way."}
+                  : section === "public-files"
+                    ? "Publish files and copy direct R2 download links."
+                    : section === "knowledge"
+                      ? "Topics that grow with your work. Knowledge with a history."
+                      : section === "connections"
+                        ? "Give your apps a way in. Keep control of their access."
+                        : section === "activity"
+                          ? "A clear record of what arrived and who left it."
+                          : section === "settings"
+                            ? "Make this space yours."
+                            : section === "starred"
+                              ? "The things you want to keep close."
+                              : "Finished handoffs, safely out of the way."}
               </p>
             </div>
             {listSection ? (
@@ -593,6 +605,7 @@ export function Console({
               </div>
             </>
           )}
+          {section === "public-files" && <PublicFilesPanel spaces={spaces} />}
           {section === "knowledge" && <KnowledgePanel spaces={spaces} />}
           {section === "connections" && (
             <Connections

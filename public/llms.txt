@@ -215,6 +215,36 @@ fetching this guide or a skill does not itself authorize installing hooks/jobs.
 
 ## 4. Transfer original files
 
+The normal file tools below store private, encrypted attachments. For files the
+user explicitly wants anyone to download, use the separate public-upload flow:
+
+- MCP: create_public_upload({name, content_type, size, space}).
+- HTTP: POST /api/v1/public-files/uploads with the same JSON fields.
+- Browser: Public files -> Upload publicly -> Copy URL.
+
+The response includes upload_url, method (PUT), headers, expires_at, and public_url.
+PUT the exact original bytes to upload_url with the returned headers. Do not send
+an Astropath Authorization header to R2. Browsers set Content-Length themselves;
+other clients must send it exactly as returned. Share public_url only after PUT
+succeeds. No completion call or Astropath file ID is involved. Save public_url in
+a note/message if you want to retrieve it later; the UI lists this visit's uploads.
+
+Uploads support up to 4 GiB in a single PUT, directly to a separate public bucket.
+The upload URL expires in one hour and cannot overwrite an existing object. The
+public download URL has no token or expiration, requires no Astropath login, and
+continues working independently of Astropath while the R2 object and domain exist.
+Anyone with the URL can read the original bytes; Astropath does not encrypt these
+public objects. This flow does not publish or convert existing private attachments.
+Revoking an Astropath connection does not retract a public object or invalidate an
+already issued R2 upload URL; manage public objects through R2. Use private uploads
+for ordinary handoffs unless public sharing was requested.
+
+GET /api/v1/public-files/config reports enabled and max_size. Public uploading
+requires write scope and a valid accessible space. If unavailable, configure the
+separate public R2 environment described below. Public downloads need no app scope.
+
+Private attachment flow:
+
 1. POST /api/v1/files/uploads with name, content_type, size, and space.
 2. PUT the exact original bytes to the returned upload_url, sending its headers.
 3. POST /api/v1/files/{id}/complete to verify the upload.
@@ -269,6 +299,16 @@ Configure .env.local privately from .env.example:
   STORAGE_PROVIDER=r2: set R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID,
     R2_SECRET_ACCESS_KEY. Use a private bucket and bucket-scoped read/write token.
     Optional R2_KEY_PREFIX isolates development objects.
+  Optional public uploads: set all of R2_PUBLIC_ACCOUNT_ID, R2_PUBLIC_BUCKET,
+    R2_PUBLIC_BASE_URL, R2_PUBLIC_ACCESS_KEY_ID, R2_PUBLIC_SECRET_ACCESS_KEY.
+    Use a separate public bucket and a separate bucket-scoped Object Read & Write
+    token. R2_PUBLIC_BASE_URL is the bucket's public HTTPS origin with no path,
+    query, or credentials. Prefer an R2 custom domain for production; r2.dev is
+    rate-limited. Configure CORS to allow PUT from APP_URL with Content-Type,
+    Content-Length, Content-Disposition, and If-None-Match; expose ETag. Public
+    GET/HEAD may allow all origins. Keep the ordinary R2_BUCKET private. This
+    feature needs no schema migration and works independently of STORAGE_PROVIDER.
+    Setup details: https://github.com/pwestling/deaddrop/blob/main/docs/public-files.md
   STORAGE_PROVIDER=vercel (default): set BLOB_READ_WRITE_TOKEN for a private store.
 
 Keep secrets server-side; never use NEXT_PUBLIC_ for them. The migration database

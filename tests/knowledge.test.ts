@@ -550,6 +550,7 @@ it("exposes the complete agent workflow through MCP without an archive tool", as
         "append_topic_note",
         "list_topic_notes",
         "record_work_note",
+        "create_public_upload",
       ]),
     );
     expect(listed.tools.some((tool) => tool.name === "archive_topic")).toBe(
@@ -577,6 +578,34 @@ it("exposes the complete agent workflow through MCP without an archive tool", as
       idempotency_key: "mcp-note",
     });
     expect(note.author.principal_id).toBe(agent.id);
+    for (const [key, value] of Object.entries({
+      R2_PUBLIC_ACCOUNT_ID: "test-account",
+      R2_PUBLIC_BUCKET: "public-test",
+      R2_PUBLIC_ACCESS_KEY_ID: "public-key",
+      R2_PUBLIC_SECRET_ACCESS_KEY: "public-secret",
+      R2_PUBLIC_BASE_URL: "https://files.example",
+    }))
+      vi.stubEnv(key, value);
+    const publicInput = {
+      name: "public.txt",
+      size: 12,
+      content_type: "text/plain",
+    };
+    const upload = await call("create_public_upload", publicInput);
+    expect(upload.public_url).toMatch(/^https:\/\/files.example\/uploads\//);
+    expect(upload.visibility).toBe("public");
+    const httpUpload = await api("public-files/uploads", "POST", publicInput);
+    expect(httpUpload.status).toBe(201);
+    expect((await httpUpload.json()).public_url).toMatch(
+      /^https:\/\/files.example\/uploads\//,
+    );
+    expect(
+      (await api("public-files/uploads", "POST", publicInput, "invalid"))
+        .status,
+    ).toBe(401);
+    expect((await (await api("public-files/config")).json()).enabled).toBe(
+      true,
+    );
     const combined = await call("record_work_note", {
       path: ["MCP topic", "Combined"],
       session_key: "mcp-thread",

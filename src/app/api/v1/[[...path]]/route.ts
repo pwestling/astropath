@@ -30,6 +30,7 @@ import {
 } from "@/lib/tenants";
 import { requireAccount } from "@/lib/policy";
 import { knowledge } from "@/lib/knowledge";
+import { createPublicUpload, publicUploadStatus } from "@/lib/public-files";
 
 const members = new MemberStore(db);
 
@@ -84,7 +85,13 @@ async function handle(
         path[2],
         await jsonBody(request),
       );
-    else if (route === "work-notes" && method === "POST") {
+    else if (route === "public-files/config" && method === "GET") {
+      requireScope(principal, "astropath:read");
+      result = publicUploadStatus();
+    } else if (route === "public-files/uploads" && method === "POST") {
+      result = await createPublicUpload(principal, await jsonBody(request));
+      status = 201;
+    } else if (route === "work-notes" && method === "POST") {
       const recorded = await knowledge.recordWorkNote(
         principal,
         await jsonBody(request),

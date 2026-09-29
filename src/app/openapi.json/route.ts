@@ -1,3 +1,4 @@
+import { publicUploadInput } from "@/lib/public-files";
 import { z } from "zod";
 import { appUrl } from "@/lib/config";
 import { messageInput, fileInput } from "@/lib/validation";
@@ -61,6 +62,28 @@ export function GET() {
       },
       paths: {
         ...knowledgePaths(),
+        "/public-files/config": {
+          get: {
+            summary: "Check whether public uploads are configured",
+            responses: response,
+          },
+        },
+        "/public-files/uploads": {
+          post: {
+            summary: "Create a direct upload to the separate public R2 bucket",
+            description:
+              "Requires write scope and an accessible space. PUT original bytes to upload_url with the returned headers (no Astropath Authorization header). After PUT succeeds, public_url is a stable unauthenticated download URL independent of Astropath. This creates no private attachment or inbox record. Upload URL expires in one hour. Maximum 4 GiB; objects cannot be overwritten. Browsers set Content-Length automatically.",
+            requestBody: body(z.toJSONSchema(publicUploadInput)),
+            responses: {
+              ...response,
+              "201": {
+                description:
+                  "Upload permission issued: upload_url, method, headers, expires_at, public_url, name, size, visibility. The object is not present until PUT succeeds.",
+              },
+              "503": { description: "Public bucket not configured" },
+            },
+          },
+        },
         "/skills": {
           get: {
             summary: "List accessible skills",

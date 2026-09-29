@@ -2260,3 +2260,41 @@ small {
     padding: 18px;
   }
 }
+
+.public-files-panel {
+  display: grid;
+  gap: 24px;
+  max-width: 800px;
+}
+.public-files-panel .settings-card {
+  display: grid;
+  gap: 16px;
+}
+.public-files-panel label {
+  display: grid;
+  gap: 8px;
+}
+.public-files-panel select,
+.public-file-result input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: inherit;
+}
+.public-file-result {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.public-file-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.public-files-panel progress {
+  width: 100%;
+}
