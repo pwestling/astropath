@@ -42,8 +42,10 @@ key stays stable, then test an unavailable connection and a trivial exchange.
 If MCP is named differently, update the PostToolUse matcher and script's tool-name
 check; otherwise an extra reminder may appear even after a successful save.
 
-ChatGPT web: use chatgpt.txt as project instructions; enable the MCP app and use
-its normal write approvals. No local hook installation is assumed.
+ChatGPT web: follow chatgpt.txt to connect the MCP app and put its copyable policy
+in project instructions, or global custom instructions for use across chats.
+An optional memory reminder supplements the policy; it does not replace it or
+enable tools. Follow the client's app permission settings. No local hooks are used.
 OpenClaw: use openclaw.txt for workspace instructions and one periodic checkpoint.
 These files do not change any client or schedule automatically when fetched.
 
