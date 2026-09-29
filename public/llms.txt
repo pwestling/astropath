@@ -110,6 +110,22 @@ https://github.com/pwestling/deaddrop/blob/main/docs/events.md
 
 ## 3. Leave session-attributed knowledge
 
+Prefer record_work_note for a single atomic capture after searching relevant
+topics. It registers/reuses your session, finds/creates the topic path, and saves
+the note together; a failure rolls back new topics and sessions. For example:
+
+  record_work_note({space:"general",path:["3D printing","Materials","PETG"],
+    session_key:"codex:NATIVE_SESSION_ID",session_name:"PETG experiments",
+    kind:"milestone",body:"Useful findings and what remains uncertain.",
+    idempotency_key:"petg-experiment-1"})
+
+HTTP: POST /api/v1/work-notes with the same JSON fields and bearer authentication.
+Returns topic, session, note, and replayed. Reuse the exact retry payload and key;
+an identical retry still returns its note after archiving. If the client cannot
+expose its native session ID, retain one unique client: key for this conversation
+and describe it as client-generated. Never invent verified native attribution.
+The individual tools below remain available for browsing and detailed workflows.
+
 Topics are broad interests, such as 3D printing, with optional subtopics such as
 Materials / PETG. They are not tickets. Notes can live at any depth; choose the
 shallowest useful level and reuse existing areas before creating more structure.
@@ -126,9 +142,9 @@ At the beginning of new work and at meaningful milestones:
    matched ignoring case and repeated whitespace. Paths support up to 32 levels.
 4. register_agent_session({space:"general",session_key:NATIVE_THREAD_ID,
    name:"PETG experiments"}). Use the actual stable native conversation/session
-   key. Save session.id and reuse it in the same connection and space. Register
-   a different key for a new native conversation. Do not invent a verified runtime
-   identity if your environment cannot supply one; explain that limitation.
+   key where available, otherwise a stable client-generated key as described above.
+   Save session.id and reuse it in the same connection and space. Register
+   a different key for a new conversation; never claim generated keys are native.
 5. append_topic_note({topic_id:TOPIC_ID,session_id:SESSION_ID,kind:"milestone",
    body:"What was learned, evidence, and next useful question.",
    idempotency_key:UNIQUE_NOTE_KEY}). Reuse the key only for an exact retry.
@@ -168,6 +184,34 @@ project instructions that should encourage it explicitly, adapt this snippet:
   topics. If Astropath is unavailable, report it without claiming a note was saved.
 
 Details: https://github.com/pwestling/deaddrop/blob/main/docs/knowledge.md
+
+### Make capture routine in each client
+
+Downloadable, opt-in setup templates are served at /integrations/README.txt.
+Source copy:
+https://raw.githubusercontent.com/pwestling/deaddrop/main/public/integrations/README.txt
+
+- Claude Code: astropath-notes skill, CLAUDE.md policy, and SessionStart,
+  UserPromptSubmit, PostToolUse, and Stop hooks. Merge claude-code.json into the
+  client's settings; do not overwrite existing hooks.
+- Codex: the same skill and AGENTS.md policy; merge codex.json into hooks.json.
+  Review/trust the installed hook definitions using the client's hooks UI.
+- ChatGPT web: chatgpt.txt contains project instructions and approval guidance.
+  Enable Astropath in the chat. This relies on prompting and ordinary write
+  approvals, not local lifecycle hooks or guaranteed background execution.
+- OpenClaw: openclaw.txt describes workspace policy and an optional 30-minute
+  automation for useful unsaved findings. Configure one job per source session,
+  with no outbound delivery, durable checkpoint state, and no note when unchanged.
+  Match the installed version; current docs use automation jobs/monitor scratch
+  rather than a runtime HEARTBEAT.md file.
+
+The local hook emits at most one completion reminder per user turn. It never
+reads/uploads transcripts or holds API credentials. An attempted save, including
+a failed tool result, suppresses forced retries. The original agent chooses what
+is useful and writes under its own session. A separate summarizing automation
+must identify itself and its source instead of impersonating another session.
+An installer should configure only the clients and sharing scope the user chose;
+fetching this guide or a skill does not itself authorize installing hooks/jobs.
 
 ## 4. Transfer original files
 
@@ -228,7 +272,8 @@ Configure .env.local privately from .env.example:
   STORAGE_PROVIDER=vercel (default): set BLOB_READ_WRITE_TOKEN for a private store.
 
 Keep secrets server-side; never use NEXT_PUBLIC_ for them. The migration database
-role must be able to create/grant the astropath_tenant role. If runtime and
+role needs membership in a pre-provisioned astropath_tenant role (NOLOGIN,
+NOSUPERUSER, NOBYPASSRLS), or permission to create/grant it. If runtime and
 migration logins differ, a database administrator must also grant the runtime
 login the required auth/directory permissions and role membership.
 

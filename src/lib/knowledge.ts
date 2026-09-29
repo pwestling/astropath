@@ -73,6 +73,17 @@ export const listTopicNotesInput = z
   })
   .strict();
 export const archiveTopicInput = z.object({ archived: z.boolean() }).strict();
+export const recordWorkNoteInput = topicPathInput.extend({
+  session_key: registerSessionInput.shape.session_key,
+  session_name: registerSessionInput.shape.name,
+  kind: topicNoteInput.shape.kind,
+  body: topicNoteInput.shape.body,
+  idempotency_key: topicNoteInput.shape.idempotency_key,
+});
+
+function normalizedName(name: string) {
+  return name.normalize("NFC").replace(/\s+/g, " ").toLowerCase();
+}
 
 interface TopicRow {
   id: string;
@@ -211,6 +222,65 @@ function requireActive(row: TopicRow) {
 
 export class KnowledgeStore {
   constructor(private database: Database) {}
+
+  async recordWorkNote(principal: Principal, raw: unknown) {
+    requireScope(principal, "astropath:write");
+    const input = recordWorkNoteInput.parse(raw);
+    const space = spaceFor(principal, input.space);
+    const database = await forPrincipal(this.database, principal);
+    return database.transaction(async (tx) => {
+      await lockSpace(tx, space);
+      // Reuse the individual operations inside one tenant-scoped transaction.
+      // A failed note rolls back newly created sessions and path segments too.
+      const scoped = new KnowledgeStore({
+        ...tx,
+        transaction: (fn) => fn(tx),
+      });
+      const { session } = await scoped.registerSession(principal, {
+        space,
+        session_key: input.session_key,
+        name: input.session_name,
+      });
+      const prior = (
+        await tx.query<NoteRow>(
+          "SELECT * FROM ap_topic_notes WHERE space=$1 AND principal_id=$2 AND retry_key_hash=$3",
+          [
+            space,
+            principal.id,
+            tx.cipher!.fingerprint("topic-note-retry", input.idempotency_key),
+          ],
+        )
+      ).rows[0];
+      let topic: Topic;
+      if (prior) {
+        topic = decodeTopic(tx, await topicRow(tx, principal, prior.topic_id));
+        if (
+          JSON.stringify(
+            topic.path.map((part) => normalizedName(part.name)),
+          ) !== JSON.stringify(input.path.map(normalizedName))
+        )
+          throw new AppError(
+            409,
+            "idempotency_conflict",
+            "This retry key was already used for a different topic path.",
+          );
+      } else {
+        topic = (
+          await scoped.ensureTopic(principal, { space, path: input.path })
+        ).topic;
+      }
+      // appendNote verifies the session/body/kind retry fingerprint before its
+      // archive check, so a committed note can still be retried after archiving.
+      const result = await scoped.appendNote(principal, {
+        topic_id: topic.id,
+        session_id: session.id,
+        kind: input.kind,
+        body: input.body,
+        idempotency_key: input.idempotency_key,
+      });
+      return { topic, session, ...result };
+    });
+  }
 
   async ensureTopic(principal: Principal, raw: unknown) {
     requireScope(principal, "astropath:write");

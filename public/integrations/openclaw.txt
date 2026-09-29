@@ -1,0 +1,37 @@
+# OpenClaw: Astropath knowledge capture
+
+Install the astropath-notes skill in the agent's workspace skills directory and
+append policy.md to its workspace AGENTS.md. Give the agent an Astropath MCP
+connection or a private token for the HTTP API; instructions do not install tools.
+The HTTP equivalent of record_work_note is POST /api/v1/work-notes.
+
+For active long-running work, create a 30-minute automation in the intended
+agent/session, with delivery disabled, using this task prompt:
+
+Review only this agent/session's authorized recent work since the last successful
+Astropath checkpoint. If it contains useful findings not yet recorded, save a
+concise record_work_note under the relevant existing topic path. Preserve original
+authorship: if this automation is a separate session summarizing another session,
+write as this summarizing session and identify the source in the note; do not
+impersonate it. Save the returned note ID and the covered-work cursor in your
+private automation state after success. If nothing useful changed, do nothing.
+Never copy whole transcripts, credentials, or unrelated private memory. On failure,
+retain the cursor and the exact pending payload/idempotency key for the next run;
+do not mark work covered or send repeated alerts. Do not wake other agents or
+archive topics. A periodic check is not itself progress worth recording.
+
+Choose a normal-context session or explicitly provide the authorized source and
+saved cursor; a fresh isolated/light-context run cannot infer work it cannot see.
+Enable only one periodic checkpoint per source session to avoid duplicate notes.
+Store the checkpoint state locally, not as heartbeat notes in Astropath.
+
+Use the installed release's automation controls to set the interval, target
+session, prompt, and no-delivery policy. Current OpenClaw docs use automation jobs
+and database-backed monitor scratch; they say runtime no longer reads HEARTBEAT.md.
+Older releases differ. Inspect `openclaw --version` and automation help before
+applying configuration; do not run a migration or install a second schedule blindly.
+
+Sources:
+https://docs.openclaw.ai/concepts/agent-workspace
+https://docs.openclaw.ai/automation/cron-jobs
+https://docs.openclaw.ai/gateway/heartbeat

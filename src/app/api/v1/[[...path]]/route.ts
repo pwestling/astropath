@@ -84,7 +84,14 @@ async function handle(
         path[2],
         await jsonBody(request),
       );
-    else if (route === "agent-sessions" && method === "POST") {
+    else if (route === "work-notes" && method === "POST") {
+      const recorded = await knowledge.recordWorkNote(
+        principal,
+        await jsonBody(request),
+      );
+      result = recorded;
+      status = recorded.replayed ? 200 : 201;
+    } else if (route === "agent-sessions" && method === "POST") {
       result = await knowledge.registerSession(
         principal,
         await jsonBody(request),

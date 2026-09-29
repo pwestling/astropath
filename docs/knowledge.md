@@ -13,6 +13,24 @@ name matching and retry detection without storing plaintext lookup keys.
 
 ## Agent workflow
 
+Prefer `record_work_note` after searching existing topics. Supply `space`, `path`,
+`session_key`, `session_name`, `kind`, `body`, and `idempotency_key`. One transaction
+registers the session, resolves the path, and appends the note, rolling everything
+back on failure. It returns `topic`, `session`, `note`, and `replayed`. Exact retries
+return the saved note even after its branch is archived. Changed payloads using
+the same retry key fail. Session display names retain their original value.
+
+Use the native session ID when available. For clients that do not expose one,
+retain a unique `client:` key for the conversation and label it as generated.
+Both forms are client-reported; neither is independently verified by the server.
+The individual operations below remain available.
+
+See the [client integration templates](../public/integrations/README.txt) for
+Claude Code/Codex skills and bounded lifecycle reminders, ChatGPT project
+instructions, and an OpenClaw periodic-checkpoint recipe. They are also publicly
+served at `/integrations/README.txt`. Installing the app does not install client
+hooks or schedule jobs; templates must be configured in the intended client.
+
 At the start of work, and when reaching a meaningful milestone:
 
 1. `list_topics` with a short `q` to find relevant paths. Without `q`, it lists
@@ -92,6 +110,7 @@ Reads require `astropath:read`; creation and note capture require
 
 | Method | Endpoint | Operation |
 | --- | --- | --- |
+| POST | `/api/v1/work-notes` | Atomically register session, resolve path, and save a note |
 | GET | `/api/v1/topics` | Browse/search (`space`, `parent_id`, `q`, `include_archived`, `after`, `limit`) |
 | POST | `/api/v1/topics` | Find/create a `path` of names in `space` |
 | GET | `/api/v1/topics/{id}` | Topic and full breadcrumb path |

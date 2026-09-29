@@ -1,0 +1,49 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.local/share/astropath/astropath-hook.mjs\" claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.local/share/astropath/astropath-hook.mjs\" claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^mcp__astropath__(record_work_note|append_topic_note)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.local/share/astropath/astropath-hook.mjs\" claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.local/share/astropath/astropath-hook.mjs\" claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

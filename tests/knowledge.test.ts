@@ -460,6 +460,18 @@ it("searches encrypted notes beyond a scan batch and paginates without skipping 
   ).toBe(3);
 });
 it("enforces HTTP scope, author validation, human-only archives and revocation", async () => {
+  const workInput = {
+    path: ["HTTP combined"],
+    session_key: "combined-http",
+    session_name: "HTTP combined session",
+    body: "HTTP captured knowledge",
+    idempotency_key: "combined-http",
+  };
+  expect((await api("work-notes", "POST", workInput)).status).toBe(201);
+  expect((await api("work-notes", "POST", workInput)).status).toBe(200);
+  expect(
+    (await api("work-notes", "POST", { ...workInput, author: "spoof" })).status,
+  ).toBe(400);
   const topicResponse = await api("topics", "POST", { path: ["HTTP topic"] });
   expect(topicResponse.status).toBe(201);
   const { topic } = await topicResponse.json();
@@ -537,6 +549,7 @@ it("exposes the complete agent workflow through MCP without an archive tool", as
         "register_agent_session",
         "append_topic_note",
         "list_topic_notes",
+        "record_work_note",
       ]),
     );
     expect(listed.tools.some((tool) => tool.name === "archive_topic")).toBe(
@@ -564,10 +577,81 @@ it("exposes the complete agent workflow through MCP without an archive tool", as
       idempotency_key: "mcp-note",
     });
     expect(note.author.principal_id).toBe(agent.id);
+    const combined = await call("record_work_note", {
+      path: ["MCP topic", "Combined"],
+      session_key: "mcp-thread",
+      session_name: "MCP run",
+      body: "One-call capture",
+      idempotency_key: "mcp-combined",
+    });
+    expect(combined.note.author.session_id).toBe(session.id);
     expect(
       (await call("list_topic_notes", { topic_id: topic.id })).notes[0].id,
     ).toBe(note.id);
   } finally {
     await client.close();
   }
+});
+
+it("records work atomically and preserves exact retries across archived paths", async () => {
+  const input = {
+    path: ["Combined capture", "Experiments"],
+    session_key: "combined-native",
+    session_name: "Combined session",
+    body: "A discovery worth sharing",
+    kind: "decision",
+    idempotency_key: "combined-1",
+  };
+  const first = await knowledge.recordWorkNote(agent, input);
+  expect(first.note.author.session_id).toBe(first.session.id);
+  expect(first.note.topic_id).toBe(first.topic.id);
+  const retry = await knowledge.recordWorkNote(agent, {
+    ...input,
+    path: ["COMBINED capture", "Experiments"],
+  });
+  expect(retry.note).toEqual(first.note);
+  expect(retry.replayed).toBe(true);
+  await knowledge.archiveTopic(human, first.topic.path[0].id, {
+    archived: true,
+  });
+  expect((await knowledge.recordWorkNote(agent, input)).note.id).toBe(
+    first.note.id,
+  );
+  await expect(
+    knowledge.recordWorkNote(agent, { ...input, body: "Changed" }),
+  ).rejects.toMatchObject({ code: "idempotency_conflict" });
+  await expect(
+    knowledge.recordWorkNote(agent, {
+      ...input,
+      path: ["Stray topic"],
+      session_key: "stray-session",
+    }),
+  ).rejects.toMatchObject({ code: "idempotency_conflict" });
+  await expect(
+    knowledge.recordWorkNote(agent, {
+      ...input,
+      idempotency_key: "combined-new",
+      session_key: "stray-session",
+    }),
+  ).rejects.toMatchObject({ code: "topic_archived" });
+  expect(
+    (await knowledge.listTopics(agent, { q: "Stray topic" })).topics,
+  ).toEqual([]);
+  const scoped = await tenantDatabase(INITIAL_TENANT, directory);
+  expect(
+    (
+      await scoped.query(
+        "SELECT id FROM ap_agent_sessions WHERE session_key_hash=$1",
+        [scoped.cipher!.fingerprint("agent-session", "stray-session")],
+      )
+    ).rows,
+  ).toEqual([]);
+  await expect(
+    knowledge.recordWorkNote({ ...agent, scopes: ["astropath:read"] }, input),
+  ).rejects.toMatchObject({ code: "insufficient_scope" });
+  await expect(
+    knowledge.recordWorkNote(agent, { ...input, space: "private" }),
+  ).rejects.toMatchObject({ status: 404 });
+  const independent = await knowledge.recordWorkNote(inOtherTenant, input);
+  expect(independent.topic.id).not.toBe(first.topic.id);
 });

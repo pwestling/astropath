@@ -6,6 +6,7 @@ import {
   topicNoteInput,
   listTopicNotesInput,
   archiveTopicInput,
+  recordWorkNoteInput,
 } from "./knowledge";
 
 export function knowledgePaths() {
@@ -32,6 +33,17 @@ export function knowledgePaths() {
     "201": { description: "Created or existing result returned" },
   };
   return {
+    "/work-notes": {
+      post: {
+        operationId: "recordWorkNote",
+        summary:
+          "Register session, resolve topic path, and append a note atomically",
+        description:
+          "Requires astropath:write. Search existing topics first. Supply a stable session_key and session_name, path, body, kind, and idempotency_key. Native session IDs are preferred; a generated client: key can identify clients without exposed native IDs. Returns topic, session, note, and replayed. Exact retries return the saved note even after archiving; conflicting retries roll back all changes. Human-only topic archiving remains separate.",
+        requestBody: body(recordWorkNoteInput),
+        responses: created,
+      },
+    },
     "/topics": {
       get: {
         operationId: "listTopics",

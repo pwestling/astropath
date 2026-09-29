@@ -138,6 +138,15 @@ For a future release that changes schema, plan and rehearse the migration and
 data rollback separately; the artifact promotion script does not run schema
 migrations automatically.
 
+For a schema upgrade, `./scripts/deploy-vps-01.sh --prepare` builds and validates
+a release without changing the running service. It retains source and dependencies
+at the printed staging path for an isolated migration rehearsal. After stopping
+writers, protecting the final backup, migrating, and verifying the data, run
+`./scripts/deploy-vps-01.sh --activate-migrated RELEASE` from the same commit.
+This mode never rolls back to an incompatible old binary automatically: a failed
+activation leaves the service stopped and retains migration tools for recovery.
+`--activate RELEASE` is only for prepared releases without a schema transition.
+
 ## Recovery boundary and retained dependencies
 
 The old RackNerd release and root-only environment file remain in place, but

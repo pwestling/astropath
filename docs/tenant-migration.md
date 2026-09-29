@@ -9,8 +9,10 @@ Set a stable `ASTROPATH_MASTER_KEY` (`openssl rand -base64 32`) in the server's
 protected environment, then run `npm run db:migrate` and `npm run files:encrypt`.
 Complete both steps before running a Blob-to-R2 storage migration; that migration
 copies the encrypted objects without changing their original-file metadata.
-The migration database role needs permission to create/grant the non-login
-`astropath_tenant` role. If the runtime database login differs from the migration
+An administrator can pre-create `astropath_tenant NOLOGIN NOSUPERUSER NOBYPASSRLS`
+and grant membership to the migration login. Otherwise the migration login needs
+permission to create/grant this role. Pre-provisioning keeps role-administration
+privileges out of the application login. If the runtime database login differs from the migration
 login, a database administrator must grant it that role plus the authentication
 and directory table permissions before starting the app. The supplied defaults
 use the same login for migration/auth and explicitly switch roles for content.

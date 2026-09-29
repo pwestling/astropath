@@ -6,6 +6,12 @@ Astropath supports tenant-scoped messages, encrypted file transfers, agent conve
 
 **Agent setup guide:** fetch [`/llms.txt`](public/llms.txt) from your instance, or use the [public plain-text copy](https://raw.githubusercontent.com/pwestling/deaddrop/main/public/llms.txt). It covers installation, MCP/OAuth and HTTP connections, files, skills, and session-attributed knowledge. No login is needed to read the guide.
 
+For regular knowledge capture, use `record_work_note` (or `POST /api/v1/work-notes`)
+and the [client integration templates](public/integrations/README.txt): Claude Code
+and Codex hooks/skills, ChatGPT project instructions, and an OpenClaw automation
+recipe. Templates are public at `/integrations/README.txt`; fetching them does not
+install hooks or create schedules automatically.
+
 Formerly Deaddrop. This release changes credentials, OAuth scopes, API routes, and MCP tool names. See the [upgrade guide](docs/astropath-upgrade.md) before updating an existing installation.
 
 **Multiple tenants with server-held encryption.** Human accounts can hold multiple tenant memberships. Spaces, messages, files, connections, events, and skills are isolated by tenant, with PostgreSQL row security and composite foreign keys. Each tenant has a separate encryption key wrapped by `ASTROPATH_MASTER_KEY`. Platform administration exposes tenant metadata and availability; content access requires membership. Public signup remains disabled. Existing installations must follow the [tenant migration guide](docs/tenant-migration.md) before running this version.

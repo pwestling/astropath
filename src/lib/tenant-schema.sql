@@ -84,7 +84,9 @@ BEGIN
  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='astropath_tenant' AND (rolsuper OR rolbypassrls)) THEN
   RAISE EXCEPTION 'astropath_tenant must not bypass row security';
  END IF;
- EXECUTE format('GRANT astropath_tenant TO %I',current_user);
+ IF NOT pg_has_role(current_user,'astropath_tenant','MEMBER') THEN
+  EXECUTE format('GRANT astropath_tenant TO %I',current_user);
+ END IF;
  FOREACH tab IN ARRAY ARRAY['ap_spaces','ap_connections','ap_members','ap_messages','ap_files','ap_receipts','ap_activity','ap_events','ap_skills','ap_skill_revisions'] LOOP
   EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY',tab);
   EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY',tab);

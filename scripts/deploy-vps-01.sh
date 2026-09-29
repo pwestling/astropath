@@ -2,6 +2,13 @@
 set -euo pipefail
 
 repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+mode="${1:-deploy}"
+case "$mode" in
+  deploy|--prepare) ;;
+  --activate|--activate-migrated)
+    [[ "${2:-}" =~ ^[0-9]{8}T[0-9]{6}Z-[a-f0-9]{7}$ ]] || { echo 'Supply the prepared release ID.' >&2; exit 1; } ;;
+  *) echo 'Usage: deploy-vps-01.sh [--prepare | --activate RELEASE | --activate-migrated RELEASE]' >&2; exit 1 ;;
+esac
 target=root@100.107.251.43
 known_hosts="$repo_dir/deploy/vps-01-known_hosts"
 ssh_options=(
@@ -25,34 +32,44 @@ if [[ -n "$status" ]]; then
 fi
 test -s "$known_hosts"
 revision="$(git -C "$repo_dir" rev-parse HEAD)"
-release="$(date -u +%Y%m%dT%H%M%SZ)-${revision:0:7}"
+release="${2:-$(date -u +%Y%m%dT%H%M%SZ)-${revision:0:7}}"
 stage="/var/tmp/deaddrop-build-$release"
 
 # The archive contains committed source only. No local .env file, .git directory,
 # dependency tree, or build cache crosses to the server.
+if [[ "$mode" != --activate* ]]; then
 git -C "$repo_dir" archive HEAD |
   ssh "${ssh_options[@]}" "$target" \
     "mkdir -m 0700 '$stage' && tar --no-same-owner -xf - -C '$stage'"
+fi
 
-ssh "${ssh_options[@]}" "$target" bash -s -- "$release" "$revision" <<'REMOTE'
+ssh "${ssh_options[@]}" "$target" bash -s -- "$release" "$revision" "$mode" <<'REMOTE'
 set -euo pipefail
 release="$1"
 revision="$2"
+mode="$3"
 [[ "$release" =~ ^[0-9]{8}T[0-9]{6}Z-[a-f0-9]{7}$ ]]
 [[ "$revision" =~ ^[a-f0-9]{40}$ ]]
 stage="/var/tmp/deaddrop-build-$release"
 target="/srv/deaddrop/releases/$release"
 exec 9>/run/lock/deaddrop-release.lock
 flock -n 9 || { echo "Another Deaddrop deployment is running." >&2; exit 1; }
-trap 'rm -rf -- "$stage"' EXIT
+# Keep prepared migration tools available if activation fails.
+cleanup_stage() { if [[ "$mode" != --activate* ]]; then rm -rf -- "$stage"; fi; }
+trap cleanup_stage EXIT
 
 test -s /var/lib/app-secrets/deaddrop.env
 test -f "$stage/package-lock.json"
-test ! -e "$target"
+if [[ "$mode" == --activate* ]]; then
+  test "$(cat "$target/REVISION")" = "$revision"
+else
+  test ! -e "$target"
+fi
 id deaddrop >/dev/null
 node_store="$(nix eval --raw --impure --expr '(builtins.getFlake "/etc/nixos").inputs.nixpkgs.legacyPackages.x86_64-linux.nodejs_24.outPath')"
 test -x "$node_store/bin/node"
 
+if [[ "$mode" != --activate* ]]; then
 # Build from locked inputs on Linux, with no production credentials in the build
 # environment. The host's build slice leaves headroom for PostgreSQL and SSH.
 systemd-run --scope --collect --quiet --slice=builds.slice \
@@ -79,6 +96,16 @@ chmod -R u=rwX,g=rX,o= "$target"
 artifact_sha256="$(tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
   -C "$target" -cf - . | sha256sum | cut -d' ' -f1)"
 printf '%s\n' "$artifact_sha256" > "$target.sha256"
+fi
+if [[ "$mode" == --prepare ]]; then
+  # Retain locked source/dependencies for an explicit schema rehearsal/migration.
+  # No production environment is written into the build tree.
+  chown -R root:deaddrop "$stage"
+  chmod -R g+rX,o= "$stage"
+  trap - EXIT
+  echo "Prepared release $release; source $stage. No service or schema changed."
+  exit 0
+fi
 
 # The preflight serves only loopback and does not change the active release.
 preflight_unit="deaddrop-preflight-$release.service"
@@ -90,7 +117,7 @@ systemd-run --unit="${preflight_unit%.service}" --collect --quiet \
   --setenv=NODE_ENV=production --setenv=HOSTNAME=127.0.0.1 \
   --setenv=PORT=4311 --setenv=NEXT_TELEMETRY_DISABLED=1 \
   "$node_store/bin/node" "$target/server.js"
-trap 'systemctl stop "$preflight_unit" >/dev/null 2>&1 || true; rm -rf -- "$stage"' EXIT
+trap 'systemctl stop "$preflight_unit" >/dev/null 2>&1 || true; cleanup_stage' EXIT
 healthy=0
 for attempt in $(seq 1 30); do
   if curl --fail --silent http://127.0.0.1:4311/api/health >/dev/null; then
@@ -105,8 +132,9 @@ if [[ "$healthy" != 1 ]]; then
 fi
 curl --fail --silent http://127.0.0.1:4311/login >/dev/null
 curl --fail --silent http://127.0.0.1:4311/openapi.json >/dev/null
+curl --fail --silent http://127.0.0.1:4311/llms.txt | cmp - "$target/public/llms.txt"
 systemctl stop "$preflight_unit"
-trap 'rm -rf -- "$stage"' EXIT
+trap cleanup_stage EXIT
 
 previous="$(readlink -f /srv/deaddrop/current 2>/dev/null || true)"
 if [[ -n "$previous" && -d "$previous" ]]; then
@@ -114,8 +142,8 @@ if [[ -n "$previous" && -d "$previous" ]]; then
 fi
 ln -s "$target" /srv/deaddrop/current.next
 mv -Tf /srv/deaddrop/current.next /srv/deaddrop/current
-systemctl restart deaddrop.service
 healthy=0
+if systemctl restart deaddrop.service; then
 for attempt in $(seq 1 30); do
   if curl --fail --silent http://127.0.0.1:4310/api/health >/dev/null; then
     healthy=1
@@ -123,17 +151,19 @@ for attempt in $(seq 1 30); do
   fi
   sleep 1
 done
+fi
 if [[ "$healthy" != 1 ]]; then
-  if [[ -n "$previous" && -d "$previous" ]]; then
+  if [[ "$mode" != --activate-migrated && -n "$previous" && -d "$previous" ]]; then
     ln -s "$previous" /srv/deaddrop/current.next
     mv -Tf /srv/deaddrop/current.next /srv/deaddrop/current
     systemctl restart deaddrop.service
   else
     systemctl stop deaddrop.service
   fi
-  echo "Deaddrop did not become healthy; the previous release was restored when available." >&2
+  echo "Deaddrop did not become healthy. A migrated deployment remains stopped; restore its database before any old-binary rollback." >&2
   exit 1
 fi
 
-echo "Deaddrop release $release is healthy on loopback; artifact SHA-256 $artifact_sha256"
+echo "Deaddrop release $release is healthy on loopback; artifact SHA-256 $(cat "$target.sha256")"
+rm -rf -- "$stage"
 REMOTE
