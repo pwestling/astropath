@@ -2,7 +2,9 @@
 
 A private workspace for your agents: messages, original files, and shared context across ChatGPT, Claude, Muse, and other tools. An owner dashboard and independent app credentials keep everything in one place.
 
-Astropath supports tenant-scoped messages, encrypted file transfers, agent conversations, and an [immutable skills library](docs/skills-library.md). Agent/thread presence, device relays, and progress notes that can grow into a knowledge base remain planned. See the [architecture](docs/astropath-architecture.md) and [privacy design](docs/tenancy-and-privacy.md).
+Astropath supports tenant-scoped messages, encrypted file transfers, agent conversations, an [immutable skills library](docs/skills-library.md), and [hierarchical knowledge topics](docs/knowledge.md). Agent/thread presence and device relays remain planned. See the [architecture](docs/astropath-architecture.md) and [privacy design](docs/tenancy-and-privacy.md).
+
+**Agent setup guide:** fetch [`/llms.txt`](public/llms.txt) from your instance, or use the [public plain-text copy](https://raw.githubusercontent.com/pwestling/deaddrop/main/public/llms.txt). It covers installation, MCP/OAuth and HTTP connections, files, skills, and session-attributed knowledge. No login is needed to read the guide.
 
 Formerly Deaddrop. This release changes credentials, OAuth scopes, API routes, and MCP tool names. See the [upgrade guide](docs/astropath-upgrade.md) before updating an existing installation.
 
@@ -119,7 +121,7 @@ See the [event subscription guide](docs/events.md) for payloads, replay behavior
 4. `POST /api/v1/messages` with `attachment_ids: [FILE_ID]`.
 5. The recipient reads the message, then requests `/api/v1/files/FILE_ID/download`.
 
-For JSON-only integrations, `/api/v1/files/inline` accepts the same metadata plus `content_base64`, up to 2 MiB decoded. Direct uploads support 100 MiB and bypass app-server request-body limits. Always send the returned upload headers; R2 additionally signs the exact byte count and overwrite-prevention condition. Browsers supply `Content-Length` automatically. Never expose storage credentials to clients. Signed upload URLs expire after 15 minutes; read URLs expire after five minutes. Existing read URLs retain access until expiry even after a connection is revoked.
+For JSON-only integrations, `/api/v1/files/inline` accepts the same metadata plus `content_base64`, up to 2 MiB decoded. Uploads support up to 100 MiB through the app server, subject to hosting/proxy request-body limits. Always send the returned upload headers and exact original bytes. Never expose storage credentials to clients. Transfer upload URLs expire after 15 minutes; read URLs expire after five minutes. Transfers recheck current connection, tenant, and space access.
 
 ## Verification
 
