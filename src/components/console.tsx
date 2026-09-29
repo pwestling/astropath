@@ -38,10 +38,17 @@ import { api, bytes, relative } from "./api";
 import { authClient } from "@/lib/auth-client";
 import { MemberSettings } from "./member-settings";
 import { TenantSwitcher, PlatformTenants } from "./tenant-switcher";
+import { KnowledgePanel } from "./knowledge-panel";
 import type { Message, Attachment } from "@/lib/store";
 
 type Section =
-  "inbox" | "starred" | "archive" | "connections" | "activity" | "settings";
+  | "inbox"
+  | "knowledge"
+  | "starred"
+  | "archive"
+  | "connections"
+  | "activity"
+  | "settings";
 interface Connection {
   id: string;
   name: string;
@@ -76,6 +83,7 @@ interface Space {
 }
 const sectionTitle: Record<Section, string> = {
   inbox: "Inbox",
+  knowledge: "Knowledge",
   starred: "Starred",
   archive: "Archive",
   connections: "Connections",
@@ -95,6 +103,10 @@ export function Console({
   tenantId?: string;
 }) {
   const [section, setSection] = useState<Section>("inbox");
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has("topic"))
+      setSection("knowledge");
+  }, []);
   const [mobileNav, setMobileNav] = useState(false);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [spaces, setSpaces] = useState<Space[]>([]);
@@ -217,6 +229,12 @@ export function Console({
                 count: overview?.pinned,
               },
               {
+                id: "knowledge",
+                icon: Folder,
+                label: "Knowledge",
+                count: undefined,
+              },
+              {
                 id: "archive",
                 icon: Archive,
                 label: "Archive",
@@ -309,15 +327,17 @@ export function Console({
               <p>
                 {section === "inbox"
                   ? "Notes, files, and handoffs. Ready when you are."
-                  : section === "connections"
-                    ? "Give your apps a way in. Keep control of their access."
-                    : section === "activity"
-                      ? "A clear record of what arrived and who left it."
-                      : section === "settings"
-                        ? "Make this space yours."
-                        : section === "starred"
-                          ? "The things you want to keep close."
-                          : "Finished handoffs, safely out of the way."}
+                  : section === "knowledge"
+                    ? "Topics that grow with your work. Knowledge with a history."
+                    : section === "connections"
+                      ? "Give your apps a way in. Keep control of their access."
+                      : section === "activity"
+                        ? "A clear record of what arrived and who left it."
+                        : section === "settings"
+                          ? "Make this space yours."
+                          : section === "starred"
+                            ? "The things you want to keep close."
+                            : "Finished handoffs, safely out of the way."}
               </p>
             </div>
             {listSection ? (
@@ -573,6 +593,7 @@ export function Console({
               </div>
             </>
           )}
+          {section === "knowledge" && <KnowledgePanel spaces={spaces} />}
           {section === "connections" && (
             <Connections
               baseUrl={baseUrl}

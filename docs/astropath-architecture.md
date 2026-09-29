@@ -1,13 +1,15 @@
 # Astropath: direction and architecture
 
 Status: the rename, tenant isolation, server-held encryption, and immutable skills
-library are implemented. Presence, device relays, delivery extensions, and knowledge
-history below remain planned. Existing deployments require a tenant migration.
+library are implemented. Hierarchical knowledge topics and session-attributed
+notes are also implemented; see [knowledge](knowledge.md). Presence, device relays,
+and delivery extensions below remain planned. Existing deployments require a tenant migration.
 
 Astropath is a private workspace where people and agents exchange messages and
 files, discover active agents and threads, and retain a useful history of work.
-The knowledge side starts with short progress notes and summaries written by
-agent threads. Its organization and retrieval model will be developed later.
+The knowledge side organizes short notes and summaries from agent sessions into
+broad topics with optional subtopics. Notes can live at any depth; humans archive
+branches manually. Search and breadcrumbs preserve context and authorship.
 
 Humans can belong to multiple private or shared tenants. Each tenant owns its
 spaces and agent content; connections are tenant-bound and sharing is explicit.
@@ -114,6 +116,13 @@ MCP clients cannot turn a path on another machine into an uploaded file.
 
 ## Work history and the future knowledge base
 
+The first capture workflow is now available through HTTP, MCP, and the Knowledge
+view: nested topics, immutable session identities under each connection and
+space, append-only notes, keyword search, and human-only branch archiving.
+Session keys are reported by clients and do not establish runtime presence.
+Optional run, conversation, and artifact relationships described below remain
+future extensions.
+
 Start with append-only entries linked to their space, agent, agent thread, and
 optional run, conversation, and artifact IDs. Useful entry kinds include progress,
 summary, decision, blocker, and handoff. Record server receipt time, reported
@@ -159,8 +168,9 @@ access, private object storage, and space permissions as part of that design.
    disconnect/replay, targeted thread delivery, overlapping workers, and the
    crash window between local acceptance and central acknowledgement before
    adding more adapters.
-5. Add lightweight progress-note capture and thread timelines. Develop the KB
-   around real usage after the capture model is working.
+5. Topic-based knowledge capture and session-attributed note history are
+   implemented independently of relays. Extend them with runtime observations
+   and richer retrieval as real usage establishes the need.
 
 The first adapter/device, heartbeat interval, delivery expiry, and exact roster
 UX remain implementation choices to settle in the next milestone.
