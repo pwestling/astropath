@@ -5,7 +5,7 @@ See [its deployment record](vps-01-migration.md) and use
 `scripts/deploy-vps-01.sh` for that instance. The guide below remains the
 general-purpose deployment path, including the older RackNerd script.
 
-Astropath is a single-owner application with optional space-restricted members. It can run on a Linux VPS with Node.js 24, nginx, systemd, Postgres and a private Cloudflare R2 bucket. There is no tenant model. Vercel hosting is not required; Vercel Blob remains an optional storage backend.
+Astropath supports multiple tenants with separate encryption keys and space-restricted members. It can run on a Linux VPS with Node.js 24, nginx, systemd, Postgres and a private Cloudflare R2 bucket. Vercel hosting is not required; Vercel Blob remains an optional storage backend.
 
 ## Prerequisites
 
@@ -15,7 +15,7 @@ Astropath is a single-owner application with optional space-restricted members. 
 - A reachable Postgres database. Neon works without any Vercel integration. Use a pooled URL for the app and a direct URL for schema migration.
 - A private R2 bucket and an **Object Read & Write** API token scoped only to that bucket. Leave the public `r2.dev` URL disabled and do not add a public custom domain to the bucket.
 
-Create the R2 bucket in your own Cloudflare account, then configure its CORS policy for your app's exact origin:
+Create the R2 bucket in your own Cloudflare account. File transfers go through the app, so normal browser uploads and downloads do not require bucket CORS. If you use the direct-storage diagnostic script, configure CORS for your app's exact origin:
 
 ```json
 [
@@ -29,7 +29,7 @@ Create the R2 bucket in your own Cloudflare account, then configure its CORS pol
 ]
 ```
 
-The server signs direct R2 upload/download URLs. Clients must send the returned headers. Upload signatures bind the exact size, MIME type and `If-None-Match: *`, preventing overwrites even when a signed URL is reused. Browsers set `Content-Length` automatically from the upload body. Upload links last 15 minutes and download links five minutes. Space checks and attachment ownership stay in the application.
+The server issues application transfer URLs and encrypts file bytes before storing them in R2. Clients must send the returned headers and original file bytes. The app checks the reserved size, MIME type, tenant, space, and current permissions on each transfer. Upload links last 15 minutes and download links five minutes. The proxy must accept request bodies up to the app's 100 MiB file limit.
 
 ## Configure and initialize
 
@@ -38,6 +38,7 @@ Install dependencies locally with Node 24 and `npm ci`. Prepare a minimal enviro
 ```dotenv
 APP_URL=https://astropath.example.com
 BETTER_AUTH_SECRET=YOUR_STABLE_AUTH_SECRET
+ASTROPATH_MASTER_KEY=YOUR_SEPARATELY_GENERATED_BASE64_32_BYTE_KEY
 OWNER_EMAIL=you@example.com
 DATABASE_URL=YOUR_POSTGRES_URL
 STORAGE_PROVIDER=r2
@@ -47,11 +48,13 @@ R2_ACCESS_KEY_ID=YOUR_BUCKET_SCOPED_ACCESS_KEY
 R2_SECRET_ACCESS_KEY=YOUR_BUCKET_SCOPED_SECRET
 ```
 
+Generate `ASTROPATH_MASTER_KEY` once with `openssl rand -base64 32`, separately from the auth secret. Use the same stable key for migrations and the app, and back it up separately from Postgres and object storage. The migration database role must be able to create/grant `astropath_tenant`; see [tenant migration permissions](tenant-migration.md).
+
 Use `chmod 600` on local secret files; `.env*` files are ignored by Git. Install the runtime environment at `/app/deaddrop/shared/app.env`, owned by root with mode 600, inside a directory with mode 700. systemd reads it and supplies the environment to the unprivileged app process. Do not put an owner password, provider-wide credentials, or build/deployment tokens into this file.
 
 For a **new** installation, follow the database migration and owner initialization instructions in [the Vercel deployment guide](deployment.md#4-configure-secrets-and-create-the-owner), supplying your own Postgres URL and storage variables. Run these commands explicitly before serving requests. No Vercel account is needed when using R2. Remove the bootstrap owner password afterward.
 
-For an **existing** installation, retain `APP_URL`, `BETTER_AUTH_SECRET`, `OWNER_EMAIL` and the same database. This preserves accounts, sessions, API tokens, named OAuth identities, refresh tokens and signing keys. Do not run owner initialization again.
+For an **existing Astropath** installation, retain `APP_URL`, `BETTER_AUTH_SECRET`, `ASTROPATH_MASTER_KEY`, `OWNER_EMAIL` and the same database. Do not run owner initialization again. For a **Deaddrop upgrade**, follow the [upgrade guide](astropath-upgrade.md) and complete both `db:migrate` and `files:encrypt` before serving traffic. Human accounts remain usable, but the rename revokes old app connections and requires reconnecting them.
 
 ## Deploy and configure HTTPS
 
@@ -70,7 +73,7 @@ Releases live in `/app/deaddrop/releases/`. `current` points to the active relea
 
 Obtain a trusted certificate for your hostname. For a fresh domain, point DNS to the VPS, configure an HTTP ACME webroot at `/app/deaddrop/acme`, then use Certbot. For an existing live site, **obtain the certificate with DNS validation before switching traffic**. A manual DNS certificate must be changed to an automatic renewal method after cutover; manual issuance alone does not auto-renew.
 
-On RackNerd, Certbot runs from `/app/certbot` using `/root/.local/bin/uv run certbot`. For a pre-issued certificate, install the rendered nginx config from the current release, validate with `nginx -t`, and reload nginx. Later deploys install the nginx config automatically when the certificate exists. nginx keeps SSE unbuffered, forwards the original HTTPS origin, limits request bodies to 4 MiB (large files upload directly to storage), and avoids logging OAuth query strings. Astropath is hidden from the RackNerd public site directory.
+On RackNerd, Certbot runs from `/app/certbot` using `/root/.local/bin/uv run certbot`. For a pre-issued certificate, install the rendered nginx config from the current release, validate with `nginx -t`, and reload nginx. Later deploys install the nginx config automatically when the certificate exists. nginx keeps SSE unbuffered, forwards the original HTTPS origin, accepts request bodies up to 100 MiB with [`client_max_body_size 100m`](https://nginx.org/en/docs/http/ngx_http_core_module.html#client_max_body_size), and avoids logging transfer credentials and OAuth query strings. Separately managed proxies, including the NixOS VPS configuration, need the same upload limit. Astropath is hidden from the RackNerd public site directory.
 
 Verify HTTPS against the VPS before changing DNS:
 
@@ -118,7 +121,7 @@ systemctl show deaddrop -p MemoryCurrent
 
 The VPS move removes Vercel Function duration billing. The current SSE protocol still rotates after 50 seconds and polls Postgres every two seconds while connected; clients reconnect with their saved cursor. **Moving the app does not eliminate Neon compute usage from active listeners.** There is no polling when no SSE clients are connected.
 
-Keep database recovery/backups enabled and back up the stable auth secret and storage credentials securely. Monitor disk, memory, storage usage and certificate renewal. OS/runtime patching and nginx/systemd operations are now the VPS owner's responsibility.
+Keep database recovery/backups enabled and back up the stable auth secret, master encryption key, and storage credentials securely. Keep the master key backup separate from database and object backups. Monitor disk, memory, storage usage and certificate renewal. OS/runtime patching and nginx/systemd operations are now the VPS owner's responsibility.
 
 To roll back an app release on the VPS:
 

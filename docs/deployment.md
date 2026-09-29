@@ -2,7 +2,7 @@
 
 This guide covers **Vercel hosting with Vercel Blob**. For Node/systemd/nginx hosting with Cloudflare R2, see [the VPS deployment guide](vps-deployment.md).
 
-This guide installs one private workspace with one administrator and optional invited members. Use a separate Vercel project, Postgres database, private Blob store, auth secret, and domain for each independent installation. Invited members receive access to assigned spaces within the same workspace; there is no tenant model.
+This guide installs Astropath with an initial tenant and platform administrator. Human accounts can belong to multiple tenants; each tenant has its own encryption key and space permissions. Use a separate Vercel project, Postgres database, private Blob store, secrets, and domain for each independent installation. Existing Deaddrop installations must follow the [upgrade guide](astropath-upgrade.md), including both database and file encryption migrations, before deploying this version.
 
 You need Node.js 24, npm, Git, a Vercel account, a Neon account (or another reachable Postgres server), and access to the DNS for your domain. Astropath supplies its own email/password authentication: no email service, external login provider, or AI API key is required.
 
@@ -45,9 +45,12 @@ If Cloudflare hosts your DNS, set the record to **DNS only** (gray cloud) for th
 
 ## 4. Configure secrets and create the owner
 
-Generate an auth secret once:
+Generate an auth secret and a separate master encryption key once. Run
+`openssl rand -base64 32` twice and save the outputs in `BETTER_AUTH_SECRET` and
+`ASTROPATH_MASTER_KEY`, respectively:
 
 ```sh
+openssl rand -base64 32
 openssl rand -base64 32
 cp .env.example .env.bootstrap
 chmod 600 .env.bootstrap
@@ -58,12 +61,18 @@ Edit `.env.bootstrap` locally. Use your **production** origin and **direct** dat
 ```dotenv
 APP_URL=https://astropath.example.com
 BETTER_AUTH_SECRET="YOUR_GENERATED_SECRET"
+ASTROPATH_MASTER_KEY="YOUR_SEPARATELY_GENERATED_BASE64_32_BYTE_KEY"
 DATABASE_URL="YOUR_DIRECT_POSTGRES_URL"
 BLOB_READ_WRITE_TOKEN="YOUR_PRIVATE_STORE_TOKEN"
 OWNER_EMAIL=you@example.com
 OWNER_NAME="Your Name"
 OWNER_PASSWORD="YOUR_UNIQUE_PASSWORD_AT_LEAST_12_CHARACTERS"
 ```
+
+Keep the master key stable and back it up separately from database and object
+backups. The migration database role must be able to create/grant the
+`astropath_tenant` role; see [tenant migration permissions](tenant-migration.md).
+Use the same master key in the deployed app's environment.
 
 Run the following from the repository root. These commands explicitly load `.env.bootstrap`, not `.env.local`:
 
@@ -86,6 +95,7 @@ In **Project Settings → Environment Variables**, set these for **Production**:
 | ----------------------- | ---------------------------------------------------------------------------------------- |
 | `APP_URL`               | Your exact stable HTTPS origin from step 3.                                              |
 | `BETTER_AUTH_SECRET`    | The same generated secret used for bootstrap. Keep it stable.                            |
+| `ASTROPATH_MASTER_KEY`  | The same separate master encryption key used for bootstrap. Keep it stable.              |
 | `DATABASE_URL`          | Your pooled Neon URL, or the appropriate URL for your Postgres provider.                 |
 | `BLOB_READ_WRITE_TOKEN` | The token for your private production Blob store. It may already be present from step 2. |
 | `OWNER_EMAIL`           | The exact owner email used at bootstrap. Comparisons ignore case.                        |
@@ -141,15 +151,15 @@ The invited member can manage their own connections, but only within the space a
 
 The [HTTP event stream](events.md) uses the same Postgres database and requires no additional service or environment variables. Run the schema migration before deploying an upgrade that adds event support. The SSE route has a 60-second function budget and rotates streams after 50 seconds; consumers must reconnect using their saved event cursor. Include `ap_events` in database backups. Active subscribers poll the database and keep it active, so account for that usage when running persistent listeners.
 
-For local development, use `.env.local` with `APP_URL=http://localhost:3000`, a separate database, a separate private Blob store, and a development auth secret. Run `npm run db:migrate`, `npm run owner:create` once, then `npm run dev`. The npm scripts for database setup load `.env.local`; the explicit Node commands above load `.env.bootstrap`. Neither is interchangeable by filename alone.
+For local development, use `.env.local` with `APP_URL=http://localhost:3000`, a separate database, a separate private Blob store, a development auth secret, and a separate `ASTROPATH_MASTER_KEY`. Run `npm run db:migrate`, `npm run owner:create` once, then `npm run dev`. The npm scripts for database setup load `.env.local`; the explicit Node commands above load `.env.bootstrap`. Neither is interchangeable by filename alone.
 
 A preview that needs working OAuth must have a stable preview origin, matching `APP_URL`, and isolated data/storage. A protected preview cannot be used by external clients unless those clients can pass its deployment protection. Use a fresh test database where possible. If you clone production, it contains owner accounts, credentials, and encrypted OAuth signing keys; it is not an empty install. A different `BETTER_AUTH_SECRET` cannot decrypt copied keys. Keep such clones private, and reset test-only auth data deliberately or create a fresh database instead.
 
 For updates:
 
-1. Back up the database and keep a recoverable copy of private files and the stable auth secret. GitHub stores the code, not your notes, files, settings, or credentials.
+1. Back up the database and keep a recoverable copy of private files and the stable auth secret. Back up `ASTROPATH_MASTER_KEY` separately from database and object backups. GitHub stores the code, not your notes, files, settings, or credentials.
 2. Review and test the update in an isolated environment. Run `npm ci`, `npm run typecheck`, `npm test`, and `npm run build`.
-3. Test schema changes on a disposable database branch first. Apply the migration to production with its direct URL using the explicit command in step 4. Do not rerun `create-owner` for an upgrade.
+3. Test schema changes on a disposable database branch first. Apply the migration to production with its direct URL using the explicit command in step 4. For a Deaddrop upgrade, complete the [tenant and encryption migration](tenant-migration.md), including `files:encrypt`, before deploying. Do not rerun `create-owner` for an upgrade.
 4. Deploy with `npx vercel@latest --prod`, or push to your configured production branch after migrations are ready. Repeat the verification checks. Rolling back code does not undo a database migration.
 
 Keep `APP_URL` and `BETTER_AUTH_SECRET` stable. To change domains, add and verify the new domain, update `APP_URL`, redeploy, and reconnect OAuth clients to the new `/mcp` URL. Tokens issued for the old origin have a different issuer/resource. Update HTTP clients' base URLs as well. Change the owner's password in authenticated **Settings**; changing an environment variable does not change the password or rename the database account.
@@ -169,4 +179,4 @@ Monitor database and Blob usage and retain backups of both. Abandoned uploads ar
 | Uploads fail                                                | Check that the store is private, its token belongs to this project/environment, and the redeployed app has the token.                           |
 | Identity name is already in use                             | Choose a distinct name, or revoke the old connection before reauthorizing with that name. Names are unique ignoring case.                       |
 
-Each independent owner deploys a separate instance. Additional people within that workspace use explicit invitations and space permissions; they do not receive a separate tenant or owner role. Create them through **Settings → Members**, not by manually inserting authentication rows.
+Tenant owners invite additional people through **Settings → Members** and assign space permissions. A person can belong to multiple tenants and create a tenant of their own. Platform administration does not grant content access without tenant membership.

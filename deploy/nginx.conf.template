@@ -8,7 +8,8 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/__DOMAIN__/privkey.pem;
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
-    client_max_body_size 4m;
+    # Uploads pass through the app; match MAX_FILE_BYTES in src/lib/config.ts.
+    client_max_body_size 100m;
 
     # OAuth codes and other credentials can appear in query strings.
     access_log off;
