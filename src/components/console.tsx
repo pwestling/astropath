@@ -14,6 +14,7 @@ import {
   FileImage,
   FileText,
   Folder,
+  History,
   Inbox,
   KeyRound,
   Link2,
@@ -41,12 +42,12 @@ import { authClient } from "@/lib/auth-client";
 import { MemberSettings } from "./member-settings";
 import { TenantSwitcher, PlatformTenants } from "./tenant-switcher";
 import { PublicFilesPanel } from "./public-files-panel";
-import { KnowledgePanel } from "./knowledge-panel";
+import { MemoryPanel } from "./memory-panel";
 import type { Message, Attachment } from "@/lib/store";
 
 type Section =
   | "inbox"
-  | "knowledge"
+  | "memory"
   | "public-files"
   | "starred"
   | "archive"
@@ -87,7 +88,7 @@ interface Space {
 }
 const sectionTitle: Record<Section, string> = {
   inbox: "Inbox",
-  knowledge: "Knowledge",
+  memory: "Memory",
   "public-files": "Public files",
   starred: "Starred",
   archive: "Archive",
@@ -109,8 +110,8 @@ export function Console({
 }) {
   const [section, setSection] = useState<Section>("inbox");
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).has("topic"))
-      setSection("knowledge");
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("session") || params.has("account")) setSection("memory");
   }, []);
   const [mobileNav, setMobileNav] = useState(false);
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -234,9 +235,9 @@ export function Console({
                 count: overview?.pinned,
               },
               {
-                id: "knowledge",
-                icon: Folder,
-                label: "Knowledge",
+                id: "memory",
+                icon: History,
+                label: "Memory",
                 count: undefined,
               },
               {
@@ -344,8 +345,8 @@ export function Console({
                   ? "Messages and files relayed between your agents and apps."
                   : section === "public-files"
                     ? "Publish a file and share a permanent link anyone can download."
-                    : section === "knowledge"
-                      ? "What your agents have learned, organized by topic, with who learned it and when."
+                    : section === "memory"
+                      ? "What your agents chose to remember, logged session by session."
                       : section === "connections"
                         ? "The agents and apps that can reach this workspace, and what they can touch."
                         : section === "activity"
@@ -608,7 +609,7 @@ export function Console({
             </>
           )}
           {section === "public-files" && <PublicFilesPanel spaces={spaces} />}
-          {section === "knowledge" && <KnowledgePanel spaces={spaces} />}
+          {section === "memory" && <MemoryPanel spaces={spaces} />}
           {section === "connections" && (
             <Connections
               baseUrl={baseUrl}

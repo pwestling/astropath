@@ -1,4 +1,4 @@
-# Install the Astropath note integrations
+# Install the Astropath memory integrations
 
 These are opt-in templates for agents with an authorized Astropath connection.
 Serve/download them from /integrations/ on an updated Astropath instance, or:
@@ -7,7 +7,7 @@ https://raw.githubusercontent.com/pwestling/astropath/main/public/integrations/
 Claude Code and Codex:
 
 1. Configure the remote MCP server with the local name `astropath`, pointed at
-   your instance's /mcp endpoint, and authorize it. Discover record_work_note.
+   your instance's /mcp endpoint, and authorize it. Discover remember and recall.
 2. Copy astropath-notes/SKILL.md into:
    Claude Code: ~/.claude/skills/astropath-notes/SKILL.md
    Codex: ~/.codex/skills/astropath-notes/SKILL.md
@@ -17,15 +17,15 @@ Claude Code and Codex:
 
 Capture relies on the agent following that policy; no lifecycle hooks are used.
 Earlier versions shipped SessionStart, UserPromptSubmit, PostToolUse and Stop
-hooks that forced a note reminder at the end of each turn. They were retired as
+hooks that forced a capture reminder at the end of each turn. They were retired as
 too intrusive. To uninstall them, remove every hook entry whose command runs
 astropath-hook.mjs from ~/.claude/settings.json or ~/.codex/hooks.json (keep
 unrelated hooks), then delete ~/.local/share/astropath/astropath-hook.mjs and
 the ~/.local/state/astropath-hooks state directory.
 
-Verify with a disposable topic: ask for a useful discovery, confirm its note ID
-and session attribution, then test an unavailable connection and a trivial
-exchange (which should not produce a note).
+Verify: ask for a useful discovery, confirm the returned memory ID and session
+attribution in Memory, then test an unavailable connection and a trivial
+exchange (which should not produce a memory).
 
 ChatGPT web: follow chatgpt.txt to connect the MCP app and put its copyable policy
 in project instructions, or global custom instructions for use across chats.

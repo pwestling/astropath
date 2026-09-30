@@ -2,12 +2,12 @@
 
 A private workspace for your agents: messages, original files, and shared context across ChatGPT, Claude, Muse, and other tools. An owner dashboard and independent app credentials keep everything in one place.
 
-Astropath supports tenant-scoped messages, encrypted file transfers, agent conversations, an [immutable skills library](docs/skills-library.md), and [hierarchical knowledge topics](docs/knowledge.md). Agent/thread presence and device relays remain planned. See the [architecture](docs/astropath-architecture.md) and [privacy design](docs/tenancy-and-privacy.md).
+Astropath supports tenant-scoped messages, encrypted file transfers, agent conversations, an [immutable skills library](docs/skills-library.md), and a per-session [agent memory log](docs/memory.md). Agent/thread presence and device relays remain planned. See the [architecture](docs/astropath-architecture.md) and [privacy design](docs/tenancy-and-privacy.md).
 
-**Agent setup guide:** fetch [`/llms.txt`](public/llms.txt) from your instance, or use the [public plain-text copy](https://raw.githubusercontent.com/pwestling/astropath/main/public/llms.txt). It covers installation, MCP/OAuth and HTTP connections, files, skills, and session-attributed knowledge. No login is needed to read the guide.
+**Agent setup guide:** fetch [`/llms.txt`](public/llms.txt) from your instance, or use the [public plain-text copy](https://raw.githubusercontent.com/pwestling/astropath/main/public/llms.txt). It covers installation, MCP/OAuth and HTTP connections, files, skills, and the memory log. No login is needed to read the guide.
 
-For regular knowledge capture, use `record_work_note` (or `POST /api/v1/work-notes`)
-and the [client integration templates](public/integrations/README.txt): a Claude Code
+For regular capture, agents call `remember` (or `POST /api/v1/memories`) whenever
+they would write a memory. See the [client integration templates](public/integrations/README.txt): a Claude Code
 and Codex skill with CLAUDE.md/AGENTS.md policy, ChatGPT project instructions, and an
 OpenClaw automation recipe. Templates are public at `/integrations/README.txt`;
 fetching them does not change client instructions or create schedules automatically.
@@ -16,11 +16,11 @@ Formerly Deaddrop. This release changes credentials, OAuth scopes, API routes, a
 
 **Multiple tenants with server-held encryption.** Human accounts can hold multiple tenant memberships. Spaces, messages, files, connections, events, and skills are isolated by tenant, with PostgreSQL row security and composite foreign keys. Each tenant has a separate encryption key wrapped by `ASTROPATH_MASTER_KEY`. Platform administration exposes tenant metadata and availability; content access requires membership. Public signup remains disabled. Existing installations must follow the [tenant migration guide](docs/tenant-migration.md) before running this version.
 
-**A knowledge base for your agents.** Organize broad interests into topics and
-subtopics, such as **3D printing → Materials → PETG**. Agents find or create a
-useful path and leave notes at any depth, with authorship tied to their connection
-and native session. Browse and search the history in **Knowledge**; humans can
-manually archive and restore branches. See the [agent knowledge workflow](docs/knowledge.md).
+**A memory log for your agents.** Agents append a short entry whenever they would
+write a memory, with no topics or categories to choose. Each entry is tied to the
+agent's connection and session. Browse sessions and search every entry in
+**Memory**. Organizing the log (human curation and an Astropath AI that builds
+structure) is planned on top of it. See the [memory workflow](docs/memory.md).
 
 **[Deploy on a VPS with Cloudflare R2 →](docs/vps-deployment.md)** · **[Deploy on Vercel with Blob →](docs/deployment.md)**
 
@@ -133,7 +133,7 @@ Astropath Authorization header to R2. Browsers supply Content-Length themselves.
 The upload permission lasts one hour and permits one new object, up to 4 GiB.
 Files are downloadable immediately after upload and are not encrypted by Astropath.
 R2 still provides its own storage encryption. These uploads create no inbox file;
-save the URL in a message or knowledge note if you want a durable reference.
+save the URL in a message or memory if you want a durable reference.
 
 Configure `R2_PUBLIC_ACCOUNT_ID`, `R2_PUBLIC_BUCKET`, `R2_PUBLIC_BASE_URL`,
 `R2_PUBLIC_ACCESS_KEY_ID`, and `R2_PUBLIC_SECRET_ACCESS_KEY`. Use a dedicated bucket

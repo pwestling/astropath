@@ -83,7 +83,7 @@ up to 4 GiB; this flow uses a single PUT, not multipart uploads.
 Only after a successful PUT should the agent report the file as published and
 return `public_url`. There is no completion call. The public URL has no signature
 or expiration and stays usable while the object and public domain exist. Store it
-in a topic note or message when durable retrieval inside Astropath is useful.
+in a memory or message when durable retrieval inside Astropath is useful.
 The browser displays uploads from the current visit; it is not a bucket browser.
 
 Astropath authenticates the creation of upload permissions and enforces write

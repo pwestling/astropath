@@ -29,7 +29,7 @@ import {
   assertTenantMember,
 } from "@/lib/tenants";
 import { requireAccount } from "@/lib/policy";
-import { knowledge } from "@/lib/knowledge";
+import { memory } from "@/lib/memory";
 import { createPublicUpload, publicUploadStatus } from "@/lib/public-files";
 
 const members = new MemberStore(db);
@@ -91,53 +91,41 @@ async function handle(
     } else if (route === "public-files/uploads" && method === "POST") {
       result = await createPublicUpload(principal, await jsonBody(request));
       status = 201;
-    } else if (route === "work-notes" && method === "POST") {
-      const recorded = await knowledge.recordWorkNote(
+    } else if (route === "memories" && method === "POST") {
+      const saved = await memory.remember(principal, await jsonBody(request));
+      result = saved;
+      status = saved.replayed ? 200 : 201;
+    } else if (route === "memories" && method === "GET")
+      result = await memory.recall(principal, {
+        space: url.searchParams.get("space") ?? undefined,
+        q: url.searchParams.get("q") ?? undefined,
+        session_key: url.searchParams.get("session_key") ?? undefined,
+        session_id: url.searchParams.get("session_id") ?? undefined,
+        principal_id: url.searchParams.get("principal_id") ?? undefined,
+        no_session: url.searchParams.get("no_session") === "true",
+        before: url.searchParams.get("before") ?? undefined,
+        limit: Number(url.searchParams.get("limit") ?? 30),
+      });
+    else if (route === "memory-sessions" && method === "GET")
+      result = await memory.sessions(principal, {
+        space: url.searchParams.get("space") ?? undefined,
+        principal_id: url.searchParams.get("principal_id") ?? undefined,
+        before: url.searchParams.get("before") ?? undefined,
+        limit: Number(url.searchParams.get("limit") ?? 30),
+      });
+    else if (route === "work-notes" && method === "POST") {
+      const recorded = await memory.recordWorkNote(
         principal,
         await jsonBody(request),
       );
       result = recorded;
       status = recorded.replayed ? 200 : 201;
-    } else if (route === "agent-sessions" && method === "POST") {
-      result = await knowledge.registerSession(
-        principal,
-        await jsonBody(request),
+    } else if (["topics", "topic-notes", "agent-sessions"].includes(path[0]))
+      throw new AppError(
+        410,
+        "retired",
+        "Topics were replaced by the memory log. Save with POST /api/v1/memories and search with GET /api/v1/memories.",
       );
-      status = 201;
-    } else if (route === "topics" && method === "POST") {
-      result = await knowledge.ensureTopic(principal, await jsonBody(request));
-      status = 201;
-    } else if (route === "topics" && method === "GET")
-      result = await knowledge.listTopics(principal, {
-        space: url.searchParams.get("space") ?? undefined,
-        parent_id: url.searchParams.get("parent_id") ?? undefined,
-        q: url.searchParams.get("q") ?? undefined,
-        include_archived: url.searchParams.get("include_archived") === "true",
-        after: url.searchParams.get("after") ?? undefined,
-        limit: Number(url.searchParams.get("limit") ?? 30),
-      });
-    else if (path[0] === "topics" && path.length === 2 && method === "GET")
-      result = await knowledge.readTopic(principal, path[1]);
-    else if (path[0] === "topics" && path.length === 2 && method === "PATCH")
-      result = await knowledge.archiveTopic(
-        principal,
-        path[1],
-        await jsonBody(request),
-      );
-    else if (route === "topic-notes" && method === "POST") {
-      result = await knowledge.appendNote(principal, await jsonBody(request));
-      status = 201;
-    } else if (route === "topic-notes" && method === "GET")
-      result = await knowledge.listNotes(principal, {
-        topic_id: url.searchParams.get("topic_id") ?? undefined,
-        space: url.searchParams.get("space") ?? undefined,
-        include_descendants:
-          url.searchParams.get("include_descendants") !== "false",
-        include_archived: url.searchParams.get("include_archived") === "true",
-        q: url.searchParams.get("q") ?? undefined,
-        before: url.searchParams.get("before") ?? undefined,
-        limit: Number(url.searchParams.get("limit") ?? 30),
-      });
     else if (route === "skills" && method === "GET")
       result = await skills.list(principal, {
         space: url.searchParams.get("space") ?? undefined,

@@ -1,15 +1,16 @@
 # Astropath: direction and architecture
 
 Status: the rename, tenant isolation, server-held encryption, and immutable skills
-library are implemented. Hierarchical knowledge topics and session-attributed
-notes are also implemented; see [knowledge](knowledge.md). Presence, device relays,
+library are implemented. A per-session agent memory log is also implemented;
+see [memory](memory.md). Presence, device relays,
 and delivery extensions below remain planned. Existing deployments require a tenant migration.
 
 Astropath is a private workspace where people and agents exchange messages and
 files, discover active agents and threads, and retain a useful history of work.
-The knowledge side organizes short notes and summaries from agent sessions into
-broad topics with optional subtopics. Notes can live at any depth; humans archive
-branches manually. Search and breadcrumbs preserve context and authorship.
+On the knowledge side, agents append short entries to a memory log for each
+session whenever they would write a memory, without categorizing them. A later
+layer (human curation and an Astropath AI) organizes the log and surfaces what
+matters. An earlier topic tree was retired and its notes copied into the log.
 
 Humans can belong to multiple private or shared tenants. Each tenant owns its
 spaces and agent content; connections are tenant-bound and sharing is explicit.
@@ -116,9 +117,11 @@ MCP clients cannot turn a path on another machine into an uploaded file.
 
 ## Work history and the future knowledge base
 
-The first capture workflow is now available through HTTP, MCP, and the Knowledge
-view: nested topics, immutable session identities under each connection and
-space, append-only notes, keyword search, and human-only branch archiving.
+The capture layer is available through HTTP, MCP, and the Memory view:
+immutable session identities under each connection and space, an append-only
+memory log with no write-time categories, and keyword search. The first design
+filed notes under a topic tree chosen by the agent; it was replaced because
+filing at write time added friction and belongs in a later organizing layer.
 Session keys are reported by clients and do not establish runtime presence.
 Optional run, conversation, and artifact relationships described below remain
 future extensions.
@@ -168,8 +171,7 @@ access, private object storage, and space permissions as part of that design.
    disconnect/replay, targeted thread delivery, overlapping workers, and the
    crash window between local acceptance and central acknowledgement before
    adding more adapters.
-5. Topic-based knowledge capture and session-attributed note history are
-   implemented independently of relays. Extend them with runtime observations
+5. The session memory log is implemented independently of relays. Extend them with runtime observations
    and richer retrieval as real usage establishes the need.
 
 The first adapter/device, heartbeat interval, delivery expiry, and exact roster

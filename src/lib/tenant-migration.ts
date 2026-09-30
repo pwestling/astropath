@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Queryable } from "./db";
 import { newTenantKey, unwrapTenantKey, contentCipher } from "./encryption";
 import { ownerEmail } from "./config";
+import { migrateTopicNotes } from "./memory";
 
 export const INITIAL_TENANT = "00000000-0000-4000-8000-000000000001";
 
@@ -27,6 +28,9 @@ export async function migrateTenancy(tx: Queryable) {
   );
   await tx.query(
     await readFile(new URL("./knowledge-schema.sql", import.meta.url), "utf8"),
+  );
+  await tx.query(
+    await readFile(new URL("./memory-schema.sql", import.meta.url), "utf8"),
   );
   const owner = (
     await tx.query<{ id: string; name: string; email: string }>(
@@ -128,5 +132,6 @@ export async function migrateTenancy(tx: Queryable) {
         "UPDATE ap_activity SET detail=NULL,encrypted_detail=$2 WHERE id=$1",
         [item.id, cipher.encrypt(`activity:${item.id}`, item.detail)],
       );
+    await migrateTopicNotes(tx, tenant.id, cipher);
   }
 }
