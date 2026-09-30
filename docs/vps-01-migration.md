@@ -218,3 +218,86 @@ Keep Neon, the old RackNerd release, and its credential copy through the
 rollback window. The pre-existing Vercel aliases remain paused and were not
 repointed. Retiring RackNerd resources, those aliases, or Neon is a separate
 cleanup decision.
+
+## Rename to Astropath
+
+Status: **prepared, not yet applied.** Infrastructure changes are on the VPS
+repo branch `astropath-rename`; this branch carries the matching release
+script. The rename keeps every piece of data in place:
+
+| Before | After |
+|---|---|
+| `deaddrop.service`, user and group `deaddrop` | `astropath.service`, user and group `astropath` (new UID/GID) |
+| `/srv/deaddrop`, `/var/lib/deaddrop`, `/var/cache/deaddrop` | `/srv/astropath`, `/var/lib/astropath`, `/var/cache/astropath` |
+| PostgreSQL database and role `deaddrop` | `astropath` (renamed in place; OIDs, ownership, grants and RLS policies carry over) |
+| `secrets/deaddrop.yaml`, `/var/lib/app-secrets/deaddrop.env` | `secrets/astropath.yaml`, `/var/lib/app-secrets/astropath.env` |
+| `deaddrop-db-backup` timer, `db-backups/deaddrop/` | `astropath-db-backup`, new dumps under `db-backups/astropath/` |
+
+Unchanged: the R2 bucket `deaddrop` (buckets cannot be renamed; Roundtable's
+backups also live there), older dumps under `db-backups/deaddrop/`, the
+`deaddrop.thehivemind5.com` redirect, and the retired RackNerd install.
+
+NixOS `ensureDatabases` would create an empty `astropath` database on
+activation, so the database and role must be renamed **before** the switch.
+
+### Before downtime
+
+1. In the encrypted environment, change `DATABASE_URL` from
+   `postgresql:///deaddrop?host=/run/postgresql` to
+   `postgresql:///astropath?host=/run/postgresql`
+   (`./scripts/sops.sh edit hosts/vps-01/secrets/astropath.yaml` in the VPS
+   repo), then commit it on `astropath-rename`. Leave `R2_BUCKET` unchanged.
+2. Pre-build the branch's configuration on the host from a staged copy, so the
+   switch step's build is already in the Nix store:
+   `git archive astropath-rename flake.nix flake.lock hosts | ssh … 'mkdir -p /root/stage-astropath && tar -xf - -C /root/stage-astropath && systemd-run --scope --slice=builds.slice nixos-rebuild build --flake path:/root/stage-astropath#vps-01'`.
+3. Take a fresh backup: `systemctl start deaddrop-db-backup.service`, then
+   confirm `/var/lib/deaddrop-db-backup/last-success` names a new object.
+
+### Cutover (the app is down from step 4 until step 7)
+
+4. `systemctl stop deaddrop.service deaddrop-db-backup.timer`
+5. As `postgres`: `ALTER DATABASE deaddrop RENAME TO astropath;` then
+   `ALTER ROLE deaddrop RENAME TO astropath;` (peer authentication maps the new
+   Unix user to the new role; the role has no password to invalidate).
+6. Move state and repoint absolute symlinks:
+   ```sh
+   mv /srv/deaddrop /srv/astropath
+   mv /var/lib/deaddrop /var/lib/astropath
+   mv /var/cache/deaddrop /var/cache/astropath
+   mv /var/lib/deaddrop-db-backup /var/lib/astropath-db-backup
+   for link in current previous; do
+     ln -sfn "$(readlink /srv/astropath/$link | sed 's#^/srv/deaddrop/#/srv/astropath/#')" /srv/astropath/$link
+   done
+   for release in /srv/astropath/releases/*/; do
+     ln -sfn "/var/cache/astropath/$(basename "$release")" "$release/.next/cache"
+   done
+   rm -f /var/lib/app-secrets/deaddrop.env
+   ```
+7. From the VPS repo on `astropath-rename`, run `./scripts/deploy.sh`. The new
+   service may fail its first start because releases are still group-owned by
+   the old GID. Then:
+   ```sh
+   chgrp -R astropath /srv/astropath/releases
+   chown -R astropath:astropath /var/cache/astropath /var/lib/astropath/.npm /var/lib/astropath/upgrade-audit
+   chown astropath:astropath /var/lib/astropath /var/lib/astropath-db-backup
+   systemctl restart astropath.service
+   curl --fail http://127.0.0.1:4310/api/health
+   ```
+
+### Verify
+
+8. Check `https://astropath.porterwestling.com/login`, a signed-in page, MCP
+   OAuth discovery, and an existing attachment download. Run
+   `systemctl start astropath-db-backup.service` and confirm a new
+   `db-backups/astropath/` object. `systemctl --failed` must be empty.
+9. Merge both branches, then release current `main` with
+   `./scripts/deploy-vps-01.sh`, which now uses the Astropath paths.
+
+### Rollback
+
+Before step 7 activates: reverse step 6's moves and symlinks, run
+`ALTER DATABASE astropath RENAME TO deaddrop; ALTER ROLE astropath RENAME TO deaddrop;`,
+and `systemctl start deaddrop.service deaddrop-db-backup.timer`. After step 7:
+first `nixos-rebuild switch --rollback`, then reverse the same data renames and
+restore `root:deaddrop` group ownership on the releases. Rolling back
+configuration does not rename the database; both halves are required.
