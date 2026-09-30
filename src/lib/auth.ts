@@ -49,7 +49,11 @@ export function createAuth(bootstrap = false) {
         scopes: ["openid", "profile", "email", "offline_access", ...SCOPES],
         allowDynamicClientRegistration: true,
         allowUnauthenticatedClientRegistration: true,
-        accessTokenExpiresIn: 900,
+        // Concurrent MCP clients (e.g. several Claude Code sessions) share one refresh
+        // token. Presenting an already-rotated token revokes the whole family, so keep
+        // refreshes rare and let a stale session replay its sibling's rotation.
+        accessTokenExpiresIn: 60 * 60,
+        refreshTokenReuseInterval: 60 * 60,
       }),
       cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" }),
     ],
