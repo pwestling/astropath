@@ -12,7 +12,7 @@ At a meaningful milestone or before finishing substantial work, call
 `body`, and `idempotency_key`. This registers the session and resolves the topic
 path atomically with the note. Save the returned topic/session IDs for reference.
 
-Use the hook-provided native session key where available. Otherwise use the
+Use a native session key where the client provides one. Otherwise use the
 runtime's actual conversation ID, or generate one stable `client:` key for this
 conversation and retain it in context. Never present a generated key as native
 or verified. A new conversation gets a new key; a resumed conversation keeps it.

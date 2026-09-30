@@ -211,11 +211,9 @@ Downloadable, opt-in setup templates are served at /integrations/README.txt.
 Source copy:
 https://raw.githubusercontent.com/pwestling/astropath/main/public/integrations/README.txt
 
-- Claude Code: astropath-notes skill, CLAUDE.md policy, and SessionStart,
-  UserPromptSubmit, PostToolUse, and Stop hooks. Merge claude-code.json into the
-  client's settings; do not overwrite existing hooks.
-- Codex: the same skill and AGENTS.md policy; merge codex.json into hooks.json.
-  Review/trust the installed hook definitions using the client's hooks UI.
+- Claude Code: astropath-notes skill and the policy.md text appended to
+  CLAUDE.md (global or project).
+- Codex: the same skill, with policy.md appended to AGENTS.md.
 - ChatGPT web: use the persistent-instructions setup below and chatgpt.txt.
   Enable Astropath in the chat. Memory can supplement the instructions; it does
   not connect the app or guarantee that notes will be written.
@@ -225,13 +223,17 @@ https://raw.githubusercontent.com/pwestling/astropath/main/public/integrations/R
   Match the installed version; current docs use automation jobs/monitor scratch
   rather than a runtime HEARTBEAT.md file.
 
-The local hook emits at most one completion reminder per user turn. It never
-reads/uploads transcripts or holds API credentials. An attempted save, including
-a failed tool result, suppresses forced retries. The original agent chooses what
-is useful and writes under its own session. A separate summarizing automation
-must identify itself and its source instead of impersonating another session.
-An installer should configure only the clients and sharing scope the user chose;
-fetching this guide or a skill does not itself authorize installing hooks/jobs.
+Capture relies on the agent following its instructions; Astropath does not
+install lifecycle hooks. Earlier releases shipped Claude Code/Codex hooks that
+forced an end-of-turn note reminder; they were retired as too intrusive. If a
+client still has hooks running astropath-hook.mjs, remove those entries from
+~/.claude/settings.json or ~/.codex/hooks.json (preserving unrelated hooks) and
+delete ~/.local/share/astropath/astropath-hook.mjs and
+~/.local/state/astropath-hooks. The original agent chooses what is useful and
+writes under its own session. A separate summarizing automation must identify
+itself and its source instead of impersonating another session. An installer
+should configure only the clients and sharing scope the user chose; fetching
+this guide or a skill does not itself authorize changing instructions or jobs.
 
 ### ChatGPT web: make topic use persist across chats
 

@@ -26,10 +26,10 @@ Both forms are client-reported; neither is independently verified by the server.
 The individual operations below remain available.
 
 See the [client integration templates](../public/integrations/README.txt) for
-Claude Code/Codex skills and bounded lifecycle reminders, ChatGPT project
+Claude Code/Codex skills and CLAUDE.md/AGENTS.md policy, ChatGPT project
 instructions, and an OpenClaw periodic-checkpoint recipe. They are also publicly
-served at `/integrations/README.txt`. Installing the app does not install client
-hooks or schedule jobs; templates must be configured in the intended client.
+served at `/integrations/README.txt`. Installing the app does not change client
+instructions or schedule jobs; templates must be configured in the intended client.
 
 At the start of work, and when reaching a meaningful milestone:
 
