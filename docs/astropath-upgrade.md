@@ -67,12 +67,14 @@ do not run it automatically.
 
 ## Infrastructure cutover
 
-The existing deployment scripts still target the provisioned Deaddrop service,
-paths, user, and production domain. This application change does not rename live
-infrastructure or the GitHub repository. Plan that cutover separately: provision
-the Astropath hostname/certificate, update `APP_URL` and OAuth client URLs, update
-storage settings, and move service/path configuration with a tested rollback.
-Keep the existing bucket; file encryption creates new object paths within it.
+The hosted instance serves `astropath.porterwestling.com`; renaming its service,
+Unix user, paths, database and role, secrets and backup job is recorded in
+[the vps-01 record](vps-01-migration.md#rename-to-astropath).
+The GitHub repository is `pwestling/astropath`; old `pwestling/deaddrop` URLs
+redirect. For your own installation, provision the new hostname and certificate,
+update `APP_URL` and OAuth client URLs, and move service and path configuration
+with a tested rollback. [VPS deployment](vps-deployment.md#installations-that-predate-the-rename)
+lists the paths an older `deploy.sh` installation uses. Keep the existing
+bucket; file encryption creates new object paths within it. R2 buckets cannot be
+renamed, so a bucket named `deaddrop` can stay as it is.
 
-The development checkout and service are already named Astropath. Its installed
-Node executable remains at `/opt/deaddrop-node/bin`; that is a host runtime path.

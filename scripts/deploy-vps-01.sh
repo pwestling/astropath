@@ -33,7 +33,7 @@ fi
 test -s "$known_hosts"
 revision="$(git -C "$repo_dir" rev-parse HEAD)"
 release="${2:-$(date -u +%Y%m%dT%H%M%SZ)-${revision:0:7}}"
-stage="/var/tmp/deaddrop-build-$release"
+stage="/var/tmp/astropath-build-$release"
 
 # The archive contains committed source only. No local .env file, .git directory,
 # dependency tree, or build cache crosses to the server.
@@ -50,22 +50,22 @@ revision="$2"
 mode="$3"
 [[ "$release" =~ ^[0-9]{8}T[0-9]{6}Z-[a-f0-9]{7}$ ]]
 [[ "$revision" =~ ^[a-f0-9]{40}$ ]]
-stage="/var/tmp/deaddrop-build-$release"
-target="/srv/deaddrop/releases/$release"
-exec 9>/run/lock/deaddrop-release.lock
-flock -n 9 || { echo "Another Deaddrop deployment is running." >&2; exit 1; }
+stage="/var/tmp/astropath-build-$release"
+target="/srv/astropath/releases/$release"
+exec 9>/run/lock/astropath-release.lock
+flock -n 9 || { echo "Another Astropath deployment is running." >&2; exit 1; }
 # Keep prepared migration tools available if activation fails.
 cleanup_stage() { if [[ "$mode" != --activate* ]]; then rm -rf -- "$stage"; fi; }
 trap cleanup_stage EXIT
 
-test -s /var/lib/app-secrets/deaddrop.env
+test -s /var/lib/app-secrets/astropath.env
 test -f "$stage/package-lock.json"
 if [[ "$mode" == --activate* ]]; then
   test "$(cat "$target/REVISION")" = "$revision"
 else
   test ! -e "$target"
 fi
-id deaddrop >/dev/null
+id astropath >/dev/null
 node_store="$(nix eval --raw --impure --expr '(builtins.getFlake "/etc/nixos").inputs.nixpkgs.legacyPackages.x86_64-linux.nodejs_24.outPath')"
 test -x "$node_store/bin/node"
 
@@ -81,17 +81,17 @@ systemd-run --scope --collect --quiet --slice=builds.slice \
   --setenv=NEXT_TELEMETRY_DISABLED=1 \
   /run/current-system/sw/bin/bash -c 'npm ci --no-audit --no-fund && npm run typecheck && npm test && npm run build'
 
-install -d -m 0755 /srv/deaddrop /srv/deaddrop/releases
+install -d -m 0755 /srv/astropath /srv/astropath/releases
 mkdir -m 0750 "$target"
 cp -a "$stage/.next/standalone/." "$target/"
 install -d -m 0750 "$target/.next"
 cp -a "$stage/.next/static" "$target/.next/static"
 if [[ -d "$stage/public" ]]; then cp -a "$stage/public" "$target/public"; fi
 rm -rf -- "$target/.next/cache"
-install -d -m 0750 -o deaddrop -g deaddrop "/var/cache/deaddrop/$release"
-ln -s "/var/cache/deaddrop/$release" "$target/.next/cache"
+install -d -m 0750 -o astropath -g astropath "/var/cache/astropath/$release"
+ln -s "/var/cache/astropath/$release" "$target/.next/cache"
 printf '%s\n' "$revision" > "$target/REVISION"
-chown -R root:deaddrop "$target"
+chown -R root:astropath "$target"
 chmod -R u=rwX,g=rX,o= "$target"
 artifact_sha256="$(tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
   -C "$target" -cf - . | sha256sum | cut -d' ' -f1)"
@@ -100,7 +100,7 @@ fi
 if [[ "$mode" == --prepare ]]; then
   # Retain locked source/dependencies for an explicit schema rehearsal/migration.
   # No production environment is written into the build tree.
-  chown -R root:deaddrop "$stage"
+  chown -R root:astropath "$stage"
   chmod -R g+rX,o= "$stage"
   trap - EXIT
   echo "Prepared release $release; source $stage. No service or schema changed."
@@ -108,11 +108,11 @@ if [[ "$mode" == --prepare ]]; then
 fi
 
 # The preflight serves only loopback and does not change the active release.
-preflight_unit="deaddrop-preflight-$release.service"
+preflight_unit="astropath-preflight-$release.service"
 systemd-run --unit="${preflight_unit%.service}" --collect --quiet \
   --slice=apps.slice --working-directory="$target" \
-  --property=User=deaddrop --property=Group=deaddrop \
-  --property=EnvironmentFile=/var/lib/app-secrets/deaddrop.env \
+  --property=User=astropath --property=Group=astropath \
+  --property=EnvironmentFile=/var/lib/app-secrets/astropath.env \
   --property=MemoryMax=768M --property=TasksMax=256 \
   --setenv=NODE_ENV=production --setenv=HOSTNAME=127.0.0.1 \
   --setenv=PORT=4311 --setenv=NEXT_TELEMETRY_DISABLED=1 \
@@ -127,7 +127,7 @@ for attempt in $(seq 1 30); do
   sleep 1
 done
 if [[ "$healthy" != 1 ]]; then
-  echo "Deaddrop preflight did not become healthy." >&2
+  echo "Astropath preflight did not become healthy." >&2
   exit 1
 fi
 curl --fail --silent http://127.0.0.1:4311/login >/dev/null
@@ -136,14 +136,14 @@ curl --fail --silent http://127.0.0.1:4311/llms.txt | cmp - "$target/public/llms
 systemctl stop "$preflight_unit"
 trap cleanup_stage EXIT
 
-previous="$(readlink -f /srv/deaddrop/current 2>/dev/null || true)"
+previous="$(readlink -f /srv/astropath/current 2>/dev/null || true)"
 if [[ -n "$previous" && -d "$previous" ]]; then
-  ln -sfn "$previous" /srv/deaddrop/previous
+  ln -sfn "$previous" /srv/astropath/previous
 fi
-ln -s "$target" /srv/deaddrop/current.next
-mv -Tf /srv/deaddrop/current.next /srv/deaddrop/current
+ln -s "$target" /srv/astropath/current.next
+mv -Tf /srv/astropath/current.next /srv/astropath/current
 healthy=0
-if systemctl restart deaddrop.service; then
+if systemctl restart astropath.service; then
 for attempt in $(seq 1 30); do
   if curl --fail --silent http://127.0.0.1:4310/api/health >/dev/null; then
     healthy=1
@@ -154,16 +154,16 @@ done
 fi
 if [[ "$healthy" != 1 ]]; then
   if [[ "$mode" != --activate-migrated && -n "$previous" && -d "$previous" ]]; then
-    ln -s "$previous" /srv/deaddrop/current.next
-    mv -Tf /srv/deaddrop/current.next /srv/deaddrop/current
-    systemctl restart deaddrop.service
+    ln -s "$previous" /srv/astropath/current.next
+    mv -Tf /srv/astropath/current.next /srv/astropath/current
+    systemctl restart astropath.service
   else
-    systemctl stop deaddrop.service
+    systemctl stop astropath.service
   fi
-  echo "Deaddrop did not become healthy. A migrated deployment remains stopped; restore its database before any old-binary rollback." >&2
+  echo "Astropath did not become healthy. A migrated deployment remains stopped; restore its database before any old-binary rollback." >&2
   exit 1
 fi
 
-echo "Deaddrop release $release is healthy on loopback; artifact SHA-256 $(cat "$target.sha256")"
+echo "Astropath release $release is healthy on loopback; artifact SHA-256 $(cat "$target.sha256")"
 rm -rf -- "$stage"
 REMOTE
