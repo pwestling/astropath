@@ -3,15 +3,15 @@
 The live `astropath.porterwestling.com` instance runs on Porter's NixOS `vps-01`.
 The previous `deaddrop.thehivemind5.com` address redirects to it.
 See [its deployment record](vps-01-migration.md) and use
-`scripts/deploy-vps-01.sh` for that instance. The guide below remains the
-general-purpose deployment path, including the older RackNerd script.
+`scripts/deploy-vps-01.sh` for that instance. The guide below is the
+general-purpose path for a conventional Linux server using `deploy.sh`.
 
 Astropath supports multiple tenants with separate encryption keys and space-restricted members. It can run on a Linux VPS with Node.js 24, nginx, systemd, Postgres and a private Cloudflare R2 bucket. Vercel hosting is not required; Vercel Blob remains an optional storage backend.
 
 ## Prerequisites
 
-- An SSH-accessible Linux server with systemd and nginx. The supplied script uses `root@racknerd`; override `REMOTE_HOST` for your own machine.
-- Node.js 24 installed on the server. `REMOTE_NODE` defaults to `/opt/deaddrop-node/bin/node`. Download official binaries from nodejs.org, verify their SHA-256 checksum against the release's `SHASUMS256.txt`, and ensure the OS meets Node's requirements. Install into a versioned directory and point `/opt/deaddrop-node` at it. Do not replace another app's runtime.
+- An SSH-accessible Linux server with systemd and nginx. `deploy.sh` has no default target: set `REMOTE_HOST` (for example `root@your-server`) and `DEPLOY_DOMAIN` on every run.
+- Node.js 24 installed on the server. `REMOTE_NODE` defaults to `/opt/astropath-node/bin/node`. Download official binaries from nodejs.org, verify their SHA-256 checksum against the release's `SHASUMS256.txt`, and ensure the OS meets Node's requirements. Install into a versioned directory and point `/opt/astropath-node` at it. Do not replace another app's runtime.
 - A stable HTTPS domain. Set `DEPLOY_DOMAIN` for your own domain; the nginx template is rendered automatically. The Node process listens on loopback at `DEPLOY_PORT` (default 4310); the next port is reserved for deployment preflight.
 - A reachable Postgres database. Neon works without any Vercel integration. Use a pooled URL for the app and a direct URL for schema migration.
 - A private R2 bucket and an **Object Read & Write** API token scoped only to that bucket. Leave the public `r2.dev` URL disabled and do not add a public custom domain to the bucket.
@@ -51,11 +51,15 @@ R2_SECRET_ACCESS_KEY=YOUR_BUCKET_SCOPED_SECRET
 
 Generate `ASTROPATH_MASTER_KEY` once with `openssl rand -base64 32`, separately from the auth secret. Use the same stable key for migrations and the app, and back it up separately from Postgres and object storage. The migration database role must be able to create/grant `astropath_tenant`; see [tenant migration permissions](tenant-migration.md).
 
-Use `chmod 600` on local secret files; `.env*` files are ignored by Git. Install the runtime environment at `/app/deaddrop/shared/app.env`, owned by root with mode 600, inside a directory with mode 700. systemd reads it and supplies the environment to the unprivileged app process. Do not put an owner password, provider-wide credentials, or build/deployment tokens into this file.
+Use `chmod 600` on local secret files; `.env*` files are ignored by Git. Install the runtime environment at `/app/astropath/shared/app.env`, owned by root with mode 600, inside a directory with mode 700. systemd reads it and supplies the environment to the unprivileged app process. Do not put an owner password, provider-wide credentials, or build/deployment tokens into this file.
 
 For a **new** installation, follow the database migration and owner initialization instructions in [the Vercel deployment guide](deployment.md#4-configure-secrets-and-create-the-owner), supplying your own Postgres URL and storage variables. Run these commands explicitly before serving requests. No Vercel account is needed when using R2. Remove the bootstrap owner password afterward.
 
 For an **existing Astropath** installation, retain `APP_URL`, `BETTER_AUTH_SECRET`, `ASTROPATH_MASTER_KEY`, `OWNER_EMAIL` and the same database. Do not run owner initialization again. For a **Deaddrop upgrade**, follow the [upgrade guide](astropath-upgrade.md) and complete both `db:migrate` and `files:encrypt` before serving traffic. Human accounts remain usable, but the rename revokes old app connections and requires reconnecting them.
+
+## Installations that predate the rename
+
+Earlier versions of `deploy.sh` installed into `/app/deaddrop` with a `deaddrop` user, systemd unit and nginx file, and used `/opt/deaddrop-node`. The current script uses `astropath` names and would create a second, separate installation beside the old one. Before redeploying such a host, stop and disable `deaddrop`, move `/app/deaddrop` to `/app/astropath` (the `current` and `previous` symlinks are absolute, so repoint them), create the `astropath` system user, `chown -R root:astropath` the releases, point `/opt/astropath-node` at the same Node installation, and remove the old unit and nginx file after the new service is healthy. Keep `shared/app.env` unchanged.
 
 ## Deploy and configure HTTPS
 
@@ -64,15 +68,15 @@ Commit your changes, then run:
 ```sh
 REMOTE_HOST=root@YOUR_SERVER \
 DEPLOY_DOMAIN=astropath.example.com \
-REMOTE_NODE=/opt/deaddrop-node/bin/node \
+REMOTE_NODE=/opt/astropath-node/bin/node \
 bash deploy.sh
 ```
 
-The script runs type checks, tests and a local production build, then copies the compiled standalone server and static assets. It installs production dependencies on Linux, avoiding macOS native binaries. Local environment files and development tooling are excluded. A temporary loopback service is checked before activation. The final service runs as `deaddrop` under systemd with a memory limit and filesystem restrictions.
+The script runs type checks, tests and a local production build, then copies the compiled standalone server and static assets. It installs production dependencies on Linux, avoiding macOS native binaries. Local environment files and development tooling are excluded. A temporary loopback service is checked before activation. The final service runs as `astropath` under systemd with a memory limit and filesystem restrictions.
 
-Releases live in `/app/deaddrop/releases/`. `current` points to the active release and `previous` to the last release. A failed service health check restores the previous release when available. Secrets remain in `shared/` and never enter a release or Git.
+Releases live in `/app/astropath/releases/`. `current` points to the active release and `previous` to the last release. A failed service health check restores the previous release when available. Secrets remain in `shared/` and never enter a release or Git.
 
-Obtain a trusted certificate for your hostname. For a fresh domain, point DNS to the VPS, configure an HTTP ACME webroot at `/app/deaddrop/acme`, then use Certbot. For an existing live site, **obtain the certificate with DNS validation before switching traffic**. A manual DNS certificate must be changed to an automatic renewal method after cutover; manual issuance alone does not auto-renew.
+Obtain a trusted certificate for your hostname. For a fresh domain, point DNS to the VPS, configure an HTTP ACME webroot at `/app/astropath/acme`, then use Certbot. For an existing live site, **obtain the certificate with DNS validation before switching traffic**. A manual DNS certificate must be changed to an automatic renewal method after cutover; manual issuance alone does not auto-renew.
 
 On RackNerd, Certbot runs from `/app/certbot` using `/root/.local/bin/uv run certbot`. For a pre-issued certificate, install the rendered nginx config from the current release, validate with `nginx -t`, and reload nginx. Later deploys install the nginx config automatically when the certificate exists. nginx keeps SSE unbuffered, forwards the original HTTPS origin, accepts request bodies up to 100 MiB with [`client_max_body_size 100m`](https://nginx.org/en/docs/http/ngx_http_core_module.html#client_max_body_size), and avoids logging transfer credentials and OAuth query strings. Separately managed proxies, including the NixOS VPS configuration, need the same upload limit. Astropath is hidden from the RackNerd public site directory.
 
@@ -87,7 +91,7 @@ After cutover, configure automatic webroot renewal and test it. For example, wit
 
 ```sh
 certbot reconfigure --cert-name astropath.example.com \
-  --authenticator webroot --webroot-path /app/deaddrop/acme
+  --authenticator webroot --webroot-path /app/astropath/acme
 certbot renew --cert-name astropath.example.com --dry-run
 ```
 
@@ -115,9 +119,9 @@ Run `scripts/test-storage.ts` to check real private R2 access, upload restrictio
 Also verify the existing browser session, OAuth discovery URLs, and existing attachments. `/api/health` alone does not test dependencies.
 
 ```sh
-systemctl status deaddrop
-journalctl -u deaddrop --since '10 minutes ago'
-systemctl show deaddrop -p MemoryCurrent
+systemctl status astropath
+journalctl -u astropath --since '10 minutes ago'
+systemctl show astropath -p MemoryCurrent
 ```
 
 The VPS move removes Vercel Function duration billing. The current SSE protocol still rotates after 50 seconds and polls Postgres every two seconds while connected; clients reconnect with their saved cursor. **Moving the app does not eliminate Neon compute usage from active listeners.** There is no polling when no SSE clients are connected.
@@ -127,8 +131,8 @@ Keep database recovery/backups enabled and back up the stable auth secret, maste
 To roll back an app release on the VPS:
 
 ```sh
-ln -sfn "$(readlink -f /app/deaddrop/previous)" /app/deaddrop/current
-systemctl restart deaddrop
+ln -sfn "$(readlink -f /app/astropath/previous)" /app/astropath/current
+systemctl restart astropath
 curl --fail http://127.0.0.1:4310/api/health
 ```
 

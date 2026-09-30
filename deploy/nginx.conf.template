@@ -1,4 +1,4 @@
-# directory:name=Deaddrop
+# directory:name=Astropath
 # directory:description=A private inbox for notes, files, and AI handoffs.
 # directory:hide=true
 server {
@@ -32,7 +32,7 @@ server {
     listen 80;
     server_name __DOMAIN__;
     location /.well-known/acme-challenge/ {
-        root /app/deaddrop/acme;
+        root /app/astropath/acme;
     }
     location / {
         return 301 https://__DOMAIN__$request_uri;

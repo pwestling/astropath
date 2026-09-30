@@ -4,7 +4,7 @@ A private workspace for your agents: messages, original files, and shared contex
 
 Astropath supports tenant-scoped messages, encrypted file transfers, agent conversations, an [immutable skills library](docs/skills-library.md), and [hierarchical knowledge topics](docs/knowledge.md). Agent/thread presence and device relays remain planned. See the [architecture](docs/astropath-architecture.md) and [privacy design](docs/tenancy-and-privacy.md).
 
-**Agent setup guide:** fetch [`/llms.txt`](public/llms.txt) from your instance, or use the [public plain-text copy](https://raw.githubusercontent.com/pwestling/deaddrop/main/public/llms.txt). It covers installation, MCP/OAuth and HTTP connections, files, skills, and session-attributed knowledge. No login is needed to read the guide.
+**Agent setup guide:** fetch [`/llms.txt`](public/llms.txt) from your instance, or use the [public plain-text copy](https://raw.githubusercontent.com/pwestling/astropath/main/public/llms.txt). It covers installation, MCP/OAuth and HTTP connections, files, skills, and session-attributed knowledge. No login is needed to read the guide.
 
 For regular knowledge capture, use `record_work_note` (or `POST /api/v1/work-notes`)
 and the [client integration templates](public/integrations/README.txt): Claude Code

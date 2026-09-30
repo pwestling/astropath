@@ -1,19 +1,19 @@
 [Unit]
-Description=Deaddrop private inbox
+Description=Astropath agent workspace
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=deaddrop
-Group=deaddrop
-WorkingDirectory=/app/deaddrop/current
-EnvironmentFile=/app/deaddrop/shared/app.env
+User=astropath
+Group=astropath
+WorkingDirectory=/app/astropath/current
+EnvironmentFile=/app/astropath/shared/app.env
 Environment=NODE_ENV=production
 Environment=HOSTNAME=127.0.0.1
 Environment=PORT=__PORT__
 Environment=NEXT_TELEMETRY_DISABLED=1
-ExecStart=__NODE__ /app/deaddrop/current/server.js
+ExecStart=__NODE__ /app/astropath/current/server.js
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=65
@@ -23,7 +23,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/app/deaddrop/current/.next/cache
+ReadWritePaths=/app/astropath/current/.next/cache
 MemoryMax=768M
 
 [Install]

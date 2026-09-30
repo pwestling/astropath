@@ -2,7 +2,7 @@
 
 These are opt-in templates for agents with an authorized Astropath connection.
 Serve/download them from /integrations/ on an updated Astropath instance, or:
-https://raw.githubusercontent.com/pwestling/deaddrop/main/public/integrations/
+https://raw.githubusercontent.com/pwestling/astropath/main/public/integrations/
 
 Claude Code and Codex (Node.js required on the client host):
 

@@ -1,8 +1,7 @@
 # RackNerd development checkout
 
 The working development checkout is `/root/dev/astropath` on RackNerd. The
-application is named Astropath; the GitHub remote and production infrastructure
-still use their existing Deaddrop names. `astropath-dev.service` runs `next
+application and its GitHub repository are named Astropath. `astropath-dev.service` runs `next
 dev` under the unprivileged `astropath-dev` account and listens only on
 `127.0.0.1:4312`. It is enabled at boot. The unit file is tracked at
 [`deploy/astropath-dev.service`](../deploy/astropath-dev.service).
@@ -11,7 +10,10 @@ RackNerd's AlmaLinux 8.9 glibc cannot load Next 16.3.5's native SWC binary.
 The service therefore uses Next's WebAssembly compiler with Webpack. Run
 [`scripts/install-next-wasm.sh`](../scripts/install-next-wasm.sh) after each
 `npm ci` to install the compiler matching the checked-out Next version. The
-service uses the existing Node 24 runtime at `/opt/deaddrop-node/bin`.
+service uses the Node 24 runtime at `/opt/astropath-node/bin`, a symlink to the
+versioned install under `/opt`. The retired production install
+(`/app/deaddrop`, a disabled `deaddrop` unit, and an nginx proxy for stale DNS)
+still exists on this host and still uses the old `/opt/deaddrop-node` link.
 
 ## Open the app
 
@@ -52,7 +54,7 @@ change it in Settings after signing in. The owner email is in `.env.local`.
 ```sh
 ssh root@racknerd
 cd /root/dev/astropath
-export PATH=/opt/deaddrop-node/bin:$PATH
+export PATH=/opt/astropath-node/bin:$PATH
 npm run typecheck
 npm test -- --maxWorkers=1 --no-file-parallelism
 systemctl status astropath-dev.service
@@ -70,7 +72,7 @@ systemctl stop astropath-dev.service
 git status --short
 git restore -- next-env.d.ts
 git pull --ff-only
-export PATH=/opt/deaddrop-node/bin:$PATH
+export PATH=/opt/astropath-node/bin:$PATH
 npm ci --no-audit --no-fund
 bash scripts/install-next-wasm.sh
 npm run db:migrate
