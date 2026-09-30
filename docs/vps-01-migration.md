@@ -221,9 +221,15 @@ cleanup decision.
 
 ## Rename to Astropath
 
-Status: **prepared, not yet applied.** Infrastructure changes are on the VPS
-repo branch `astropath-rename`; this branch carries the matching release
-script. The rename keeps every piece of data in place:
+Status: **completed 2026-09-30, 06:05:46–06:06:29 UTC (43 seconds of downtime).**
+Infrastructure commits `6c52308` and `6f31401` in the VPS repo. A fresh backup,
+`db-backups/deaddrop/20260930T055716Z-c1fc68588a34.dump.age`, was taken
+immediately before. The first post-rename backup,
+`db-backups/astropath/20260930T060630Z-89905a77ab07.dump.age`, succeeded. As
+expected, `astropath.service` failed its first start with `200/CHDIR` until the
+releases were re-grouped. The switch therefore exited with status 4, but the
+new generation was active and set as the boot default. The new user and group
+are UID 989 and GID 988. The rename keeps every piece of data in place:
 
 | Before | After |
 |---|---|
