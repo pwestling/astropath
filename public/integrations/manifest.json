@@ -1,0 +1,24 @@
+{
+  "templates": {
+    "policy.md": {
+      "version": "2026-09-30",
+      "sha256": "1e5d825522a24fdfd397a8e5e7cc3b7faf773f0da9560737b3ddb3f1574ac75c",
+      "install": "Replace the Astropath block in ~/.claude/CLAUDE.md or ~/.codex/AGENTS.md (or the project's CLAUDE.md/AGENTS.md) with this file's contents."
+    },
+    "astropath-notes/SKILL.md": {
+      "version": "2026-09-30",
+      "sha256": "a73636e6aed9703cf41a18149acf5dbc99b6804066e88bdcc490fe18a6f34037",
+      "install": "Replace ~/.claude/skills/astropath-notes/SKILL.md or ~/.codex/skills/astropath-notes/SKILL.md with this file."
+    },
+    "chatgpt.txt": {
+      "version": "2026-09-30",
+      "sha256": "82e0c147e9fe724ecdebaf345c4314f48352b50d4897526a44d2e7a06bc6a202",
+      "install": "Replace the Astropath text in ChatGPT project instructions or custom instructions with this file's Copyable policy section."
+    },
+    "openclaw.txt": {
+      "version": "2026-09-30",
+      "sha256": "4e658332509e21eefb203f3524519370218550b23245c991ca4cb2dc86cb3a3c",
+      "install": "Update the workspace AGENTS.md policy and the checkpoint automation prompt from this file."
+    }
+  }
+}

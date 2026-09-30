@@ -7,13 +7,26 @@ https://raw.githubusercontent.com/pwestling/astropath/main/public/integrations/
 Claude Code and Codex:
 
 1. Configure the remote MCP server with the local name `astropath`, pointed at
-   your instance's /mcp endpoint, and authorize it. Discover remember and recall.
+   your instance's /mcp endpoint, and authorize it. Discover get_guidance,
+   remember and recall.
 2. Copy astropath-notes/SKILL.md into:
    Claude Code: ~/.claude/skills/astropath-notes/SKILL.md
    Codex: ~/.codex/skills/astropath-notes/SKILL.md
-3. Append policy.md to ~/.claude/CLAUDE.md or ~/.codex/AGENTS.md respectively,
+3. Add policy.md to ~/.claude/CLAUDE.md or ~/.codex/AGENTS.md respectively,
    or the corresponding project instructions if this should be project-scoped.
+   Replace an existing Astropath block instead of adding a second one.
 4. Restart/resume the client so it loads the skill and instructions.
+
+These templates are thin on purpose. The policy itself comes from the server:
+agents call get_guidance (or GET /api/v1/guidance) once per session, and what it
+returns supersedes the installed text. Each template carries a marker such as
+"astropath-template: policy.md 2026-09-30"; manifest.json lists the current
+version, hash and install note for each file. When an agent sees a newer version
+than its installed marker, it tells the user and offers the update, changing
+local files only with approval.
+
+To update: fetch manifest.json, compare each installed marker with its version,
+and replace outdated files following each entry's install note.
 
 Capture relies on the agent following that policy; no lifecycle hooks are used.
 Earlier versions shipped SessionStart, UserPromptSubmit, PostToolUse and Stop

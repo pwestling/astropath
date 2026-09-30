@@ -63,6 +63,31 @@ The MCP server includes this guidance in its instructions. The
 CLAUDE.md/AGENTS.md policy, ChatGPT instructions and OpenClaw automations.
 Astropath does not observe agents or schedule check-ins.
 
+## Keeping agent guidance current
+
+The capture policy lives on the server, in `src/lib/guidance.ts`, and is served
+by `get_guidance` (MCP) and `GET /api/v1/guidance` (read scope). Agents call it
+once per session; it supersedes locally installed instructions. That makes a
+change in capture behaviour a server release rather than a reinstall in every
+client. The MCP server instructions open with the same rule in a few sentences,
+because some clients truncate long server instructions.
+
+The install templates in `public/integrations/` are thin pointers to it. Each
+carries an `astropath-template: FILE VERSION` marker, and
+`public/integrations/manifest.json` records each template's version, SHA-256
+and install note; `get_guidance` returns the same list with URLs. An agent
+that finds an older installed marker tells the user once per session and offers
+the update, changing local files only with approval.
+
+When editing guidance:
+
+- Change `GUIDANCE` and bump `GUIDANCE_VERSION` for policy changes. No
+  template change is needed.
+- Change a template only when the thin pointer itself must change. Bump its
+  version in both the marker and `manifest.json`, then run
+  `npm run integrations:manifest` to refresh hashes. The guidance test fails if
+  a template changes without this.
+
 ## Authorship and immutability
 
 Each memory records the authenticated connection and a snapshot of its name,

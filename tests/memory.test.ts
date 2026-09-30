@@ -426,6 +426,7 @@ it("serves memories over HTTP, keeps work-notes compatible and retires topic rou
   expect(
     (await api("memories", "GET", undefined, tokens[1].token)).status,
   ).toBe(401);
+  expect((await (await api("guidance")).json()).version).toMatch(/^\d{4}-/);
   const schema = await openapi().json();
   expect(schema.paths["/memories"].post.operationId).toBe("remember");
   expect(schema.paths["/topics"]).toBeUndefined();
@@ -444,7 +445,12 @@ it("exposes remember and recall over MCP without the topic tools", async () => {
   try {
     const names = (await client.listTools()).tools.map((tool) => tool.name);
     expect(names).toEqual(
-      expect.arrayContaining(["remember", "recall", "record_work_note"]),
+      expect.arrayContaining([
+        "get_guidance",
+        "remember",
+        "recall",
+        "record_work_note",
+      ]),
     );
     for (const retired of [
       "list_topics",
@@ -463,6 +469,8 @@ it("exposes remember and recall over MCP without the topic tools", async () => {
         throw new Error("Missing tool response");
       return JSON.parse(text.text);
     }
+    const guidance = await call("get_guidance", {});
+    expect(guidance.templates.length).toBeGreaterThan(0);
     const saved = await call("remember", {
       session_key: "mcp-thread",
       session_name: "MCP run",

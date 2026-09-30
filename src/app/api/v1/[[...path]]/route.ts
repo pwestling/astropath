@@ -30,6 +30,7 @@ import {
 } from "@/lib/tenants";
 import { requireAccount } from "@/lib/policy";
 import { memory } from "@/lib/memory";
+import { currentGuidance } from "@/lib/guidance";
 import { createPublicUpload, publicUploadStatus } from "@/lib/public-files";
 
 const members = new MemberStore(db);
@@ -91,7 +92,9 @@ async function handle(
     } else if (route === "public-files/uploads" && method === "POST") {
       result = await createPublicUpload(principal, await jsonBody(request));
       status = 201;
-    } else if (route === "memories" && method === "POST") {
+    } else if (route === "guidance" && method === "GET")
+      result = currentGuidance(principal);
+    else if (route === "memories" && method === "POST") {
       const saved = await memory.remember(principal, await jsonBody(request));
       result = saved;
       status = saved.replayed ? 200 : 201;

@@ -30,6 +30,15 @@ export function memoryPaths() {
     "201": { description: "Created; 200 returns an exact retry" },
   };
   return {
+    "/guidance": {
+      get: {
+        operationId: "getGuidance",
+        summary: "Current agent policy and install template versions",
+        description:
+          "Requires astropath:read. Call once per session. Returns version, guidance (the current policy, which supersedes locally installed instructions) and templates: each install template's file, version, sha256, url and install note. Installed templates carry an astropath-template marker; an older marker means the local copy should be offered for update.",
+        responses,
+      },
+    },
     "/memories": {
       post: {
         operationId: "remember",

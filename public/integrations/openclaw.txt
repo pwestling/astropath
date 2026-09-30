@@ -1,5 +1,7 @@
 # OpenClaw: Astropath memory log
 
+astropath-template: openclaw.txt 2026-09-30
+
 Install the astropath-notes skill in the agent's workspace skills directory and
 append policy.md to its workspace AGENTS.md. Give the agent an Astropath MCP
 connection or a private token for the HTTP API; instructions do not install tools.
@@ -8,7 +10,7 @@ The HTTP equivalents of remember and recall are POST and GET /api/v1/memories.
 For active long-running work, create a 30-minute automation in the intended
 agent/session, with delivery disabled, using this task prompt:
 
-Review only this agent/session's authorized recent work since the last successful
+Call get_guidance once and follow it. Review only this agent/session's authorized recent work since the last successful
 Astropath checkpoint. If it contains things worth remembering that were not yet logged, remember
 each as a short, self-contained entry. Preserve original authorship: if this
 automation is a separate session summarizing another session, write as this
