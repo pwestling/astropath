@@ -219,6 +219,38 @@ rollback window. The pre-existing Vercel aliases remain paused and were not
 repointed. Retiring RackNerd resources, those aliases, or Neon is a separate
 cleanup decision.
 
+## Memory log migration, 2026-09-30 UTC
+
+Release `20260930T145603Z-21f01c6` replaced the topic tree with the memory log
+and added server-held agent guidance. The app was down from 14:57:23 to about
+14:58:33 UTC. A backup was taken first:
+`db-backups/astropath/20260930T145720Z-a0a42f751b47.dump.age`. The migration
+copied all 18 topic notes into `ap_memories`.
+
+The schema step ran from the `--prepare` staging tree as the app user, with
+the production environment, and was verified before `--activate-migrated`:
+
+```sh
+stage=/var/tmp/astropath-build-RELEASE
+node_store="$(nix eval --raw --impure --expr '(builtins.getFlake "/etc/nixos").inputs.nixpkgs.legacyPackages.x86_64-linux.nodejs_24.outPath')"
+systemd-run --unit=astropath-migrate --collect --wait --pipe --quiet \
+  --slice=apps.slice --working-directory="$stage" \
+  --property=User=astropath --property=Group=astropath \
+  --property=EnvironmentFile=/var/lib/app-secrets/astropath.env \
+  --setenv="PATH=$node_store/bin:/run/current-system/sw/bin" \
+  "$node_store/bin/node" "$stage/node_modules/tsx/dist/cli.mjs" scripts/migrate.ts
+```
+
+Two attempts failed before running any SQL, extending the downtime by about
+30 seconds:
+- `node_modules/.bin/tsx` cannot execute on NixOS, because its
+  `#!/usr/bin/env node` shebang has no `/usr/bin/env`. Run tsx's CLI with Node
+  directly.
+- `PrivateTmp=yes` also hides `/var/tmp`, where the staging tree lives.
+
+`astropath.service` also exceeded its 30-second stop timeout and was killed. It
+reports `failed (Result: timeout)` until the next start.
+
 ## Rename to Astropath
 
 Status: **completed 2026-09-30, 06:05:46–06:06:29 UTC (43 seconds of downtime).**
