@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { Plus } from "lucide-react";
 import { api } from "./api";
 
 type Tenant = {
@@ -33,13 +34,13 @@ export function TenantSwitcher() {
       window.location.assign("/");
     } catch (error) {
       setError(
-        error instanceof Error ? error.message : "Unable to switch tenant.",
+        error instanceof Error ? error.message : "Unable to switch workspace.",
       );
       setBusy(false);
     }
   }
   async function create() {
-    const name = window.prompt("Name your new tenant");
+    const name = window.prompt("Name your new workspace");
     if (!name?.trim()) return;
     setBusy(true);
     setError("");
@@ -51,32 +52,40 @@ export function TenantSwitcher() {
       await select(result.tenant.id);
     } catch (error) {
       setError(
-        error instanceof Error ? error.message : "Unable to create tenant.",
+        error instanceof Error ? error.message : "Unable to create workspace.",
       );
       setBusy(false);
     }
   }
   return (
-    <div style={{ padding: "12px" }}>
-      <label className="small">
-        Tenant
+    <div className="tenant-switcher">
+      <span className="nav-label" id="tenant-switcher-label">
+        WORKSPACE
+      </span>
+      <div className="tenant-switcher-row">
         <select
-          aria-label="Active tenant"
+          aria-labelledby="tenant-switcher-label"
           value={active}
           disabled={busy}
           onChange={(event) => void select(event.target.value)}
         >
-          {!active && <option value="">Choose a tenant</option>}
+          {!active && <option value="">Choose a workspace</option>}
           {tenants.map((tenant) => (
             <option key={tenant.id} value={tenant.id}>
               {tenant.name}
             </option>
           ))}
         </select>
-      </label>
-      <button className="button" disabled={busy} onClick={() => void create()}>
-        New tenant
-      </button>
+        <button
+          className="icon-button"
+          title="New workspace"
+          aria-label="New workspace"
+          disabled={busy}
+          onClick={() => void create()}
+        >
+          <Plus size={16} />
+        </button>
+      </div>
       {error && (
         <p className="error" role="alert">
           {error}
@@ -117,8 +126,8 @@ export function PlatformTenants() {
   if (!admin) return null;
   return (
     <section className="settings-card">
-      <h2>Platform tenants</h2>
-      <p>Manage tenant availability and membership counts.</p>
+      <h2>All workspaces</h2>
+      <p>Enable or disable workspaces across this installation.</p>
       {tenants.map((tenant) => (
         <div key={tenant.id} className="button-row">
           <strong>{tenant.name}</strong>

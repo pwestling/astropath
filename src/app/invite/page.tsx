@@ -30,7 +30,11 @@ export default function Invitation() {
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok)
-          throw new Error(data.error?.message || "Unable to load invitation.");
+          throw new Error(
+            data.error?.code === "invalid_request"
+              ? "This invitation link is incomplete. Open the full link you were sent, or ask the owner for a new one."
+              : data.error?.message || "Unable to load invitation.",
+          );
         setInvite(data);
       })
       .catch((error) => setError(error.message));
@@ -89,7 +93,7 @@ export default function Invitation() {
       });
       if (!selected.ok)
         throw new Error(
-          "Invitation accepted. Open Astropath and select your new tenant.",
+          "Invitation accepted. Open Astropath and select your new workspace.",
         );
       window.location.assign("/");
     } catch (error) {
@@ -114,8 +118,8 @@ export default function Invitation() {
             </p>
             <p>
               Your access: {invite.spaces.map((space) => space.name).join(", ")}
-              . You can connect your apps to these spaces. The tenant owner can
-              also access them.
+              . You can connect your apps to these spaces. The workspace owner
+              can also access them.
             </p>
           </>
         )}
@@ -130,7 +134,7 @@ export default function Invitation() {
               <p>
                 {signedInAsInvite
                   ? `Signed in as ${invite.email}.`
-                  : `Sign in to your existing account as ${invite.email} to join this tenant.`}
+                  : `Sign in to your existing account as ${invite.email} to join this workspace.`}
               </p>
             )}
             {(!invite.existing_account || !signedInAsInvite) && (

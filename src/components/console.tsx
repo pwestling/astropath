@@ -23,6 +23,7 @@ import {
   MoreHorizontal,
   Paperclip,
   Plus,
+  RadioTower,
   Search,
   Send,
   Settings,
@@ -216,7 +217,7 @@ export function Console({
       <aside className={`sidebar ${mobileNav ? "mobile-open" : ""}`}>
         <Brand />
         <TenantSwitcher />
-        <div className="nav-label">WORKSPACE</div>
+        <div className="nav-label">BROWSE</div>
         <nav aria-label="Main navigation">
           {(
             [
@@ -279,7 +280,12 @@ export function Console({
             >
               <Icon size={18} />
               <span>{label}</span>
-              {id === "connections" && <span className="connection-dot" />}
+              {id === "connections" && activeConnections.length > 0 && (
+                <span
+                  className="connection-dot"
+                  title={`${activeConnections.length} active`}
+                />
+              )}
             </button>
           ))}
         </nav>
@@ -295,7 +301,7 @@ export function Console({
             <span className="user-avatar">{ownerName.slice(0, 1)}</span>
             <span>
               <strong>{ownerName}</strong>
-              <small>{owner ? "Tenant owner" : "Tenant member"}</small>
+              <small>{owner ? "Workspace owner" : "Workspace member"}</small>
             </span>
             <MoreHorizontal size={18} />
           </button>
@@ -329,27 +335,26 @@ export function Console({
         <div className="page-content">
           <div className="page-heading">
             <div>
-              <span className="eyebrow">YOUR SHARED CONTEXT</span>
               <h1>
                 {sectionTitle[section]}
                 <span className="heading-dot">.</span>
               </h1>
               <p>
                 {section === "inbox"
-                  ? "Notes, files, and handoffs. Ready when you are."
+                  ? "Messages and files relayed between your agents and apps."
                   : section === "public-files"
-                    ? "Publish files and copy direct R2 download links."
+                    ? "Publish a file and share a permanent link anyone can download."
                     : section === "knowledge"
-                      ? "Topics that grow with your work. Knowledge with a history."
+                      ? "What your agents have learned, organized by topic, with who learned it and when."
                       : section === "connections"
-                        ? "Give your apps a way in. Keep control of their access."
+                        ? "The agents and apps that can reach this workspace, and what they can touch."
                         : section === "activity"
-                          ? "A clear record of what arrived and who left it."
+                          ? "A record of what arrived and who sent it."
                           : section === "settings"
-                            ? "Make this space yours."
+                            ? "Spaces, members, and your account."
                             : section === "starred"
-                              ? "The things you want to keep close."
-                              : "Finished handoffs, safely out of the way."}
+                              ? "Messages worth keeping within reach."
+                              : "Handled messages, kept out of the way."}
               </p>
             </div>
             {listSection ? (
@@ -383,7 +388,7 @@ export function Console({
                   label="IN YOUR INBOX"
                   value={overview?.total}
                   icon={<Inbox size={17} />}
-                  caption="Everything in one place"
+                  caption="Across every space you can reach"
                 />
                 <Stat
                   label="WAITING FOR YOU"
@@ -395,7 +400,7 @@ export function Console({
                   label="CONNECTED APPS"
                   value={activeConnections.length}
                   icon={<Link2 size={17} />}
-                  caption="Your context, connected"
+                  caption="Agents and apps with access"
                 />
               </div>
               <div className="inbox-panel">
@@ -425,7 +430,6 @@ export function Console({
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                       />
-                      <kbd>⌕</kbd>
                     </label>
                     <select
                       aria-label="Filter by space"
@@ -539,9 +543,7 @@ export function Console({
                         <i />
                       </span>
                     </div>
-                    <span className="eyebrow">
-                      A LITTLE ROOM FOR WHAT’S NEXT
-                    </span>
+                    <span className="eyebrow">THE CHANNEL IS QUIET</span>
                     <h2>
                       {search
                         ? "Nothing matched that search."
@@ -549,12 +551,12 @@ export function Console({
                           ? "You’re all caught up."
                           : section === "archive"
                             ? "Nothing archived yet."
-                            : "Your next handoff starts here."}
+                            : "Nothing has come through yet."}
                     </h2>
                     <p>
                       {search
                         ? "Try another phrase or look in a different space."
-                        : "Leave a note, add a file, or connect an app. Everything you share will have a place to land."}
+                        : "Send a note, attach a file, or connect an agent. Whatever you relay here reaches every connection with access to the space."}
                     </p>
                     <div className="button-row">
                       <button
@@ -588,13 +590,13 @@ export function Console({
                     <LockDot /> Access is limited to each space’s members and
                     connected apps
                   </span>
-                  <span>MADE FOR THE HANDOFF</span>
+                  <span>RELAYED PRIVATELY</span>
                 </div>
               </div>
               <div className="inbox-bottom">
                 <span>
-                  <Sparkles size={15} /> A note from one app. A starting point
-                  for another.
+                  <Sparkles size={15} /> Sent by one agent. Picked up by the
+                  next.
                 </span>
                 <button
                   className="text-button"
@@ -672,7 +674,7 @@ export function Console({
           onCreated={() => {
             setComposer(false);
             refresh();
-            setNotice("Message saved to your workspace.");
+            setNotice("Message sent.");
           }}
         />
       )}
@@ -768,7 +770,9 @@ function Connections({
     <>
       <div className="integration-grid">
         <div className="integration-card">
-          <span className="integration-symbol">✳</span>
+          <span className="integration-symbol">
+            <RadioTower size={22} />
+          </span>
           <span className="eyebrow">CHATGPT & CLAUDE</span>
           <h2>Connect with MCP</h2>
           <p>
@@ -801,9 +805,6 @@ function Connections({
           Connected applications{" "}
           <span>{connections.filter((c) => !c.revoked_at).length}</span>
         </h2>
-        <button className="text-button" onClick={onCreate}>
-          <Plus size={15} /> Create API token
-        </button>
       </div>
       <div className="surface">
         {connections.length ? (
@@ -880,8 +881,11 @@ function Connections({
         ) : (
           <div className="plain-empty">
             <Link2 size={25} />
-            <h3>Bring your apps together.</h3>
-            <p>Connect ChatGPT or Claude above, or create a token for Muse.</p>
+            <h3>No connections yet.</h3>
+            <p>
+              Connect ChatGPT or Claude over MCP above, or create an API token
+              for any HTTP client.
+            </p>
             <button className="button" onClick={onCreate}>
               <Plus size={15} /> Create your first token
             </button>
@@ -1077,7 +1081,7 @@ function Composer({
   return (
     <Modal
       title="Send a message"
-      subtitle="A note now. A starting point later."
+      subtitle="Relay context to every agent that can reach this space."
       onClose={() => {
         if (!busy) onClose();
       }}
@@ -1088,7 +1092,7 @@ function Composer({
           Title
           <input
             name="title"
-            placeholder="What are you leaving here?"
+            placeholder="What should the next agent know?"
             maxLength={200}
             required
             disabled={busy}

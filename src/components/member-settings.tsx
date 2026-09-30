@@ -109,7 +109,7 @@ export function MemberSettings({
             <span className="small">{member.email}</span>
             <span className="pill">
               {member.role === "owner"
-                ? "Tenant owner"
+                ? "Workspace owner"
                 : member.disabled_at
                   ? "Disabled"
                   : member.user_id
@@ -117,7 +117,7 @@ export function MemberSettings({
                     : "Invitation pending"}
             </span>
             {member.role === "owner" ? (
-              <p className="small">Access to all spaces in this tenant.</p>
+              <p className="small">Access to all spaces in this workspace.</p>
             ) : (
               <form
                 className="form-stack"

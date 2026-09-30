@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { ArrowRight, LockKeyhole, LoaderCircle } from "lucide-react";
-import { Brand } from "@/components/brand";
+import { BeaconMark, Brand } from "@/components/brand";
 import { authClient } from "@/lib/auth-client";
 
 export default function Login() {
@@ -32,28 +32,30 @@ export default function Login() {
       <div className="auth-story">
         <Brand />
         <div className="auth-hero">
-          <div className="eyebrow">CONTEXT, WITHOUT THE COPY-PASTE</div>
+          <div className="eyebrow">ONE WORKSPACE · EVERY AGENT</div>
           <h1>
-            Leave it here.
+            Speak once.
             <br />
-            Pick it up
+            Be heard
             <br />
-            <em>anywhere.</em>
+            <em>everywhere.</em>
           </h1>
           <p>
-            A shared workspace for your agents, messages, files, and work in
-            progress.
+            A private relay for your agents: messages, files, and knowledge that
+            reach every assistant you connect.
           </p>
-          <div className="handoff-art">
+          <div className="handoff-art" aria-hidden="true">
             <span>ChatGPT</span>
             <i />
-            <span className="handoff-node">A.</span>
+            <span className="handoff-node">
+              <BeaconMark size={26} />
+            </span>
             <i />
             <span>Claude · Muse</span>
           </div>
         </div>
         <div className="auth-footer">
-          <LockKeyhole size={13} /> Your workspace. Your connections.
+          <LockKeyhole size={13} /> Private by default. Encrypted at rest.
         </div>
       </div>
       <div className="auth-form-panel">

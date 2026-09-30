@@ -47,7 +47,7 @@ export default function Consent() {
     })
       .then(async (response) => {
         if (!response.ok)
-          throw new Error("Unable to read this tenant's spaces.");
+          throw new Error("Unable to read this workspace's spaces.");
         const result = await response.json();
         if (!cancelled)
           setAccess(result.spaces.map((space: { name: string }) => space.name));
@@ -113,7 +113,7 @@ export default function Consent() {
           }}
         >
           <label>
-            Tenant
+            Workspace
             <select
               value={tenantId}
               onChange={(event) => setTenantId(event.target.value)}

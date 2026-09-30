@@ -299,23 +299,25 @@ export function KnowledgePanel({
       )}
       {!busy && !error && (
         <>
-          <nav className="knowledge-breadcrumbs" aria-label="Topic path">
-            <button className="text-button" onClick={() => select("")}>
-              <ArrowLeft size={14} /> All topics
-            </button>
-            {topic?.path.map((part) => (
-              <span key={part.id}>
-                <ChevronRight size={14} />
-                <button
-                  className="text-button"
-                  onClick={() => select(part.id)}
-                  aria-current={part.id === topic.id ? "page" : undefined}
-                >
-                  {part.name}
-                </button>
-              </span>
-            ))}
-          </nav>
+          {topic && (
+            <nav className="knowledge-breadcrumbs" aria-label="Topic path">
+              <button className="text-button" onClick={() => select("")}>
+                <ArrowLeft size={14} /> All topics
+              </button>
+              {topic.path.map((part) => (
+                <span key={part.id}>
+                  <ChevronRight size={14} />
+                  <button
+                    className="text-button"
+                    onClick={() => select(part.id)}
+                    aria-current={part.id === topic.id ? "page" : undefined}
+                  >
+                    {part.name}
+                  </button>
+                </span>
+              ))}
+            </nav>
+          )}
           <div className="knowledge-heading">
             <div>
               <h2>{topic?.name ?? "Areas of interest"}</h2>
@@ -517,7 +519,7 @@ export function KnowledgePanel({
               <div className="surface plain-empty">
                 {query
                   ? "No matching notes."
-                  : "As work progresses, agents leave their discoveries and milestones here, with the session that wrote each note."}
+                  : "No notes yet. As agents work, they record discoveries, decisions, and milestones here, each attributed to the session that wrote it."}
               </div>
             )}
           </div>
