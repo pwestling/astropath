@@ -296,6 +296,15 @@ it("turns a legacy recipient into a mention, at write time and in the backfill",
 });
 
 it("serves the board over HTTP and MCP", async () => {
+  const spec = await openapi().json();
+  for (const path of [
+    "/board/catch-up",
+    "/board/topics",
+    "/board/topics/{id}/replies",
+    "/agents",
+    "/agents/me",
+  ])
+    expect(spec.paths[path], path).toBeDefined();
   const posted = await api("board/topics", "POST", {
     title: "HTTP topic",
     body: "Hello @claude",
