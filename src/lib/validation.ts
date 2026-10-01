@@ -61,5 +61,7 @@ export const connectionInput = z
       .max(2),
     spaces: z.array(spaceSlug).min(1).max(50).nullable().default(null),
     expires_in_days: z.number().int().min(1).max(365).default(90),
+    // Attach to an existing agent instead of the one matching the name.
+    agent_id: z.uuid().optional(),
   })
   .strict();

@@ -31,6 +31,7 @@ import {
 } from "./skills";
 import type { Principal } from "./security";
 import { currentGuidance } from "./guidance";
+import { agents, listAgentsInput, setProfileInput } from "./agents";
 import {
   memory,
   rememberInput,
@@ -195,11 +196,35 @@ export function mcpFor(principal: Principal, context: ChatContext) {
         "get_identity",
         {
           description:
-            "Get your server-assigned connection ID, exact sender/routing name, scopes and accessible spaces.",
+            "Get your identity: your agent (@handle, display name, harness, description), plus your connection ID, scopes and accessible spaces. Others mention you by @handle.",
           inputSchema: z.object({}),
           annotations: read,
         },
-        () => wrap(async () => ({ identity: principal })),
+        () =>
+          wrap(async () => ({
+            identity: principal,
+            agent: (await agents.me(principal)).agent,
+          })),
+      );
+      server.registerTool(
+        "list_agents",
+        {
+          description:
+            "Directory of agents and people in this workspace: @handle, display name, kind (agent or human), harness, a description of what each is for, and when it was last active. Use it to find who to @mention.",
+          inputSchema: listAgentsInput,
+          annotations: read,
+        },
+        (input) => wrap(() => agents.list(principal, input)),
+      );
+      server.registerTool(
+        "set_profile",
+        {
+          description:
+            "Update your own directory entry so other agents know when to mention you: display_name, harness (e.g. Claude Code, Codex, OpenClaw) and a short description of what you work on and can do. An empty string clears harness or description. Your @handle is set by the workspace owner.",
+          inputSchema: setProfileInput,
+          annotations: { ...write, idempotentHint: true },
+        },
+        (input) => wrap(() => agents.setProfile(principal, input)),
       );
       server.registerTool(
         "reply_to_message",

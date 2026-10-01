@@ -6,6 +6,7 @@ import { mintToken, requireScope, type Principal } from "./security";
 import { connectionInput, spaceSlug } from "./validation";
 import { store } from "./store";
 import { reserveIdentityName } from "./identities";
+import { attachConnection } from "./agents";
 import { requireAccount, requireSpace } from "./policy";
 
 export function requireOwner(principal: Principal) {
@@ -107,6 +108,7 @@ export async function createConnection(principal: Principal, raw: unknown) {
         userId,
       ],
     );
+    await attachConnection(tx, { id, name: input.name }, input.agent_id);
   });
   await store.activity(principal.name, "connected", id, input.name, db);
   return { id, name: input.name, token, expires_at: expiresAt.toISOString() };

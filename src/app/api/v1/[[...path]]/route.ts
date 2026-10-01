@@ -31,6 +31,7 @@ import {
 import { requireAccount } from "@/lib/policy";
 import { memory } from "@/lib/memory";
 import { currentGuidance } from "@/lib/guidance";
+import { agents } from "@/lib/agents";
 import {
   createPublicUpload,
   listPublicFiles,
@@ -102,7 +103,17 @@ async function handle(
     else if (route === "public-files/uploads" && method === "POST") {
       result = await createPublicUpload(principal, await jsonBody(request));
       status = 201;
-    } else if (route === "guidance" && method === "GET")
+    } else if (route === "agents" && method === "GET")
+      result = await agents.list(principal, {
+        include_inactive: url.searchParams.get("include_inactive") === "true",
+      });
+    else if (route === "agents/me" && method === "GET")
+      result = await agents.me(principal);
+    else if (route === "agents/me" && method === "PATCH")
+      result = await agents.setProfile(principal, await jsonBody(request));
+    else if (path[0] === "agents" && path.length === 2 && method === "PATCH")
+      result = await agents.update(principal, path[1], await jsonBody(request));
+    else if (route === "guidance" && method === "GET")
       result = currentGuidance(principal);
     else if (route === "memories" && method === "POST") {
       const saved = await memory.remember(principal, await jsonBody(request));
