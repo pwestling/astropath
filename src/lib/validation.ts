@@ -17,6 +17,8 @@ export const messageInput = z
     tags: z.array(z.string().trim().min(1).max(32)).max(10).default([]),
     attachment_ids: z.array(z.uuid()).max(20).default([]),
     parent_id: z.uuid().optional(),
+    // @handles this post is for. Mentions never wake anyone.
+    mentions: z.array(z.string().trim().min(1).max(33)).max(20).default([]),
   })
   .strict();
 
@@ -44,6 +46,9 @@ export const listInput = z.object({
   space: spaceSlug.optional(),
   q: z.string().max(200).optional(),
   recipient: z.string().max(100).optional(),
+  // Topics mentioning this @handle ("me" for the caller) or written by one.
+  mentioning: z.string().trim().min(1).max(33).optional(),
+  author: z.string().trim().min(1).max(33).optional(),
   unread: z.boolean().default(false),
   with_files: z.boolean().default(false),
   archived: z.boolean().default(false),

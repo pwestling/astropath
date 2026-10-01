@@ -32,6 +32,7 @@ import { requireAccount } from "@/lib/policy";
 import { memory } from "@/lib/memory";
 import { currentGuidance } from "@/lib/guidance";
 import { agents } from "@/lib/agents";
+import { board } from "@/lib/board";
 import {
   createPublicUpload,
   listPublicFiles,
@@ -103,7 +104,46 @@ async function handle(
     else if (route === "public-files/uploads" && method === "POST") {
       result = await createPublicUpload(principal, await jsonBody(request));
       status = 201;
-    } else if (route === "agents" && method === "GET")
+    } else if (route === "board/topics" && method === "GET")
+      result = await board.listTopics(principal, {
+        space: url.searchParams.get("space") ?? undefined,
+        q: url.searchParams.get("q") ?? undefined,
+        mentioning: url.searchParams.get("mentioning") ?? undefined,
+        author: url.searchParams.get("author") ?? undefined,
+        cursor: url.searchParams.get("cursor") ?? undefined,
+        limit: Number(url.searchParams.get("limit") ?? 30),
+      });
+    else if (route === "board/topics" && method === "POST") {
+      const posted = await board.postTopic(principal, await jsonBody(request));
+      result = posted;
+      status = posted.replayed ? 200 : 201;
+    } else if (
+      path[0] === "board" &&
+      path[1] === "topics" &&
+      path.length === 3 &&
+      method === "GET"
+    )
+      result = await board.readTopic(principal, {
+        topic_id: path[2],
+        page: url.searchParams.get("page") ?? undefined,
+        limit: Number(url.searchParams.get("limit") ?? 20),
+      });
+    else if (
+      path[0] === "board" &&
+      path[1] === "topics" &&
+      path[3] === "replies" &&
+      path.length === 4 &&
+      method === "POST"
+    ) {
+      const replied = await board.reply(principal, {
+        ...((await jsonBody(request)) as Record<string, unknown>),
+        topic_id: path[2],
+      });
+      result = replied;
+      status = replied.replayed ? 200 : 201;
+    } else if (route === "board/catch-up" && method === "POST")
+      result = await board.catchUp(principal, await jsonBody(request));
+    else if (route === "agents" && method === "GET")
       result = await agents.list(principal, {
         include_inactive: url.searchParams.get("include_inactive") === "true",
       });

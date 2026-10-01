@@ -5,6 +5,7 @@ import { AppError } from "./errors";
 import { hash, requireScope, requireSpace, type Principal } from "./policy";
 import { messageInput, listInput } from "./validation";
 import { publishMessageEvent } from "./events";
+import { agentFor, handleFrom, resolveHandles } from "./agents";
 
 export interface Message {
   encrypted_content?: string | null;
@@ -15,6 +16,8 @@ export interface Message {
   space: string;
   principal_id: string;
   recipient: string | null;
+  agent_id?: string | null;
+  mentions?: string[];
   tags: string[];
   parent_id: string | null;
   thread_id: string;
@@ -151,6 +154,21 @@ export class MessageStore {
       where.push(`d.space = ANY(${arg(principal.spaces)}::text[])`);
     if (input.space) where.push(`d.space=${arg(input.space)}`);
     if (input.recipient) where.push(`d.recipient=${arg(input.recipient)}`);
+    if ((input.mentioning || input.author) && database.tenantId) {
+      const [mentioning, author] = await database.transaction(async (tx) => [
+        input.mentioning === "me"
+          ? (await agentFor(tx, principal)).id
+          : input.mentioning
+            ? (await resolveHandles(tx, [input.mentioning]))[0].id
+            : null,
+        input.author ? (await resolveHandles(tx, [input.author]))[0].id : null,
+      ]);
+      if (mentioning)
+        where.push(
+          `(${arg(mentioning)}::uuid=ANY(d.mentions) OR EXISTS (SELECT 1 FROM ap_messages m WHERE m.thread_id=d.id AND ${arg(mentioning)}::uuid=ANY(m.mentions)))`,
+        );
+      if (author) where.push(`d.agent_id=${arg(author)}::uuid`);
+    }
     if (input.q && !database.cipher)
       where.push(
         `(to_tsvector('english',d.title || ' ' || d.body) @@ websearch_to_tsquery('english',${arg(input.q)}) OR d.title ILIKE ${arg(`%${input.q.replace(/[\\%_]/g, "\\$&")}%`)})`,
@@ -322,6 +340,9 @@ export class MessageStore {
             "Attachments must be uploaded by this connection, ready, unused, and in this space.",
           );
       }
+      const board = tx.tenantId
+        ? await authorAndMentions(tx, principal, input)
+        : null;
       const result = await tx.query<Message>(
         `INSERT INTO ap_messages(id,space,title,body,sender,principal_id,recipient,tags,parent_id,thread_id,idempotency_key,request_hash${tx.cipher ? ",encrypted_content" : ""})
          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12${tx.cipher ? ",$13" : ""}) RETURNING *`,
@@ -349,6 +370,14 @@ export class MessageStore {
             : []),
         ],
       );
+      if (board) {
+        await tx.query(
+          "UPDATE ap_messages SET agent_id=$2,mentions=$3::uuid[] WHERE id=$1",
+          [id, board.agentId, board.mentions],
+        );
+        result.rows[0].agent_id = board.agentId;
+        result.rows[0].mentions = board.mentions;
+      }
       await tx.query(
         "UPDATE ap_files SET message_id=$1 WHERE id=ANY($2::uuid[])",
         [id, input.attachment_ids],
@@ -458,4 +487,31 @@ export class MessageStore {
     return decodeFile(database, file);
   }
 }
+// Explicit mentions must name real handles. @handles written in the body and
+// a legacy recipient that matches a handle are picked up leniently.
+async function authorAndMentions(
+  tx: Queryable,
+  principal: Principal,
+  input: { body: string; mentions: string[]; recipient?: string | null },
+) {
+  const author = await agentFor(tx, principal);
+  const ids = new Set(
+    (await resolveHandles(tx, input.mentions)).map((row) => row.id),
+  );
+  const loose = [
+    ...input.body.matchAll(/(?:^|[^\w@.])@([a-z0-9][a-z0-9-]{0,31})\b/gi),
+  ].map((match) => match[1].toLowerCase());
+  if (input.recipient) loose.push(handleFrom(input.recipient));
+  if (loose.length)
+    for (const row of (
+      await tx.query<{ id: string }>(
+        "SELECT id FROM ap_agents WHERE handle=ANY($1::text[])",
+        [loose],
+      )
+    ).rows)
+      ids.add(row.id);
+  ids.delete(author.id);
+  return { agentId: author.id, mentions: [...ids] };
+}
+
 export const store = new MessageStore(db);

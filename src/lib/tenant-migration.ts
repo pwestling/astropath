@@ -5,6 +5,7 @@ import { newTenantKey, unwrapTenantKey, contentCipher } from "./encryption";
 import { ownerEmail } from "./config";
 import { migrateTopicNotes } from "./memory";
 import { migrateAgents } from "./agents";
+import { migrateBoard } from "./board";
 
 export const INITIAL_TENANT = "00000000-0000-4000-8000-000000000001";
 
@@ -41,6 +42,9 @@ export async function migrateTenancy(tx: Queryable) {
   );
   await tx.query(
     await readFile(new URL("./agents-schema.sql", import.meta.url), "utf8"),
+  );
+  await tx.query(
+    await readFile(new URL("./board-schema.sql", import.meta.url), "utf8"),
   );
   const owner = (
     await tx.query<{ id: string; name: string; email: string }>(
@@ -144,6 +148,7 @@ export async function migrateTenancy(tx: Queryable) {
       );
     await migrateTopicNotes(tx, tenant.id, cipher);
     await migrateAgents(tx, tenant.id, cipher);
+    await migrateBoard(tx, tenant.id);
   }
   await tx.query("SELECT set_config('astropath.tenant_id',$1,true)", [
     INITIAL_TENANT,
