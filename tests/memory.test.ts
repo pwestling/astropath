@@ -452,10 +452,9 @@ it("exposes remember and recall over MCP without the topic tools", async () => {
         "record_work_note",
       ]),
     );
+    // list_topics and read_topic now name board tools, not the topic tree.
     for (const retired of [
-      "list_topics",
       "ensure_topic",
-      "read_topic",
       "register_agent_session",
       "append_topic_note",
       "list_topic_notes",
