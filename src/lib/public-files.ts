@@ -111,6 +111,41 @@ export const publicObjects = {
       client.destroy();
     }
   },
+  // Every object under uploads/, for the operator backfill.
+  async list(): Promise<
+    { key: string; size: number; modified: Date; content_type: string }[]
+  > {
+    const config = publicStorage();
+    const client = publicClient(config);
+    const objects = [];
+    try {
+      let token: string | undefined;
+      do {
+        const page = await client.send(
+          new ListObjectsV2Command({
+            Bucket: config.bucket,
+            Prefix: "uploads/",
+            ContinuationToken: token,
+          }),
+        );
+        for (const object of page.Contents ?? []) {
+          const head = await client.send(
+            new HeadObjectCommand({ Bucket: config.bucket, Key: object.Key! }),
+          );
+          objects.push({
+            key: object.Key!,
+            size: Number(object.Size ?? 0),
+            modified: object.LastModified ?? new Date(),
+            content_type: head.ContentType ?? "application/octet-stream",
+          });
+        }
+        token = page.IsTruncated ? page.NextContinuationToken : undefined;
+      } while (token);
+    } finally {
+      client.destroy();
+    }
+    return objects;
+  },
 };
 
 interface PublicFileMetadata {
@@ -308,58 +343,39 @@ export async function listPublicFiles(
 // object under uploads/ that has no row is assigned to the given space.
 export async function importPublicObjects(tx: Queryable, space: string) {
   const config = publicStorage();
-  const client = publicClient(config);
   let imported = 0;
-  try {
-    let token: string | undefined;
-    do {
-      const page = await client.send(
-        new ListObjectsV2Command({
-          Bucket: config.bucket,
-          Prefix: "uploads/",
-          ContinuationToken: token,
-        }),
-      );
-      for (const object of page.Contents ?? []) {
-        const key = object.Key!;
-        const keyHash = tx.cipher!.fingerprint("public-file-key", key);
-        if (
-          (
-            await tx.query("SELECT id FROM ap_public_files WHERE key_hash=$1", [
-              keyHash,
-            ])
-          ).rows.length
-        )
-          continue;
-        const head = await client.send(
-          new HeadObjectCommand({ Bucket: config.bucket, Key: key }),
-        );
-        const id = randomUUID();
-        const created = (object.LastModified ?? new Date()).toISOString();
-        await tx.query(
-          `INSERT INTO ap_public_files(id,space,key_hash,encrypted_metadata,size,created_by,created_at,expires_at,completed_at)
-          VALUES($1,$2,$3,$4,$5,import,$6,$6,$6)`,
-          [
-            id,
-            space,
-            keyHash,
-            tx.cipher!.encrypt(`public-file:${id}`, {
-              key,
-              name: key.split("/").slice(2).join("/"),
-              content_type: head.ContentType ?? "application/octet-stream",
-              public_url: publicUrl(config, key),
-              uploaded_by: "Imported",
-            } satisfies PublicFileMetadata),
-            object.Size ?? 0,
-            created,
-          ],
-        );
-        imported++;
-      }
-      token = page.IsTruncated ? page.NextContinuationToken : undefined;
-    } while (token);
-  } finally {
-    client.destroy();
+  for (const object of await publicObjects.list()) {
+    const keyHash = tx.cipher!.fingerprint("public-file-key", object.key);
+    if (
+      (
+        await tx.query("SELECT id FROM ap_public_files WHERE key_hash=$1", [
+          keyHash,
+        ])
+      ).rows.length
+    )
+      continue;
+    const id = randomUUID();
+    const created = object.modified.toISOString();
+    await tx.query(
+      `INSERT INTO ap_public_files(id,space,key_hash,encrypted_metadata,size,created_by,created_at,expires_at,completed_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$7,$7)`,
+      [
+        id,
+        space,
+        keyHash,
+        tx.cipher!.encrypt(`public-file:${id}`, {
+          key: object.key,
+          name: object.key.split("/").slice(2).join("/"),
+          content_type: object.content_type,
+          public_url: publicUrl(config, object.key),
+          uploaded_by: "Imported",
+        } satisfies PublicFileMetadata),
+        object.size,
+        "import",
+        created,
+      ],
+    );
+    imported++;
   }
   return imported;
 }

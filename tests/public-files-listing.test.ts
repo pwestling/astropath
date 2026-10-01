@@ -8,6 +8,7 @@ import { migrateTenancy, INITIAL_TENANT } from "../src/lib/tenant-migration";
 import { newTenantKey } from "../src/lib/encryption";
 import {
   createPublicUpload,
+  importPublicObjects,
   listPublicFiles,
   publicObjects,
 } from "../src/lib/public-files";
@@ -187,4 +188,48 @@ it("keeps an upload pending when the bucket cannot be reached", async () => {
     (await listPublicFiles(writer, {}, database)).files.map((f) => f.name);
   expect(await names()).not.toContain("flaky.txt");
   expect(await names()).toContain("flaky.txt");
+});
+
+it("imports earlier bucket objects once into the chosen space", async () => {
+  const known = (
+    await listPublicFiles(writer, { limit: 100 }, database)
+  ).files.find((f) => f.name === "first.stl")!;
+  const list = vi.spyOn(publicObjects, "list").mockResolvedValue([
+    {
+      key: keyOf(known.public_url),
+      size: 10,
+      modified: new Date("2026-09-01T00:00:00Z"),
+      content_type: "model/stl",
+    },
+    {
+      key: "uploads/0b9f1b8e-2f39-4d43-9d8a-0f3c1f1f6a11/legacy 100%.pdf",
+      size: 42,
+      modified: new Date("2026-09-15T12:00:00Z"),
+      content_type: "application/pdf",
+    },
+  ]);
+  const tenant = await tenantDatabase(INITIAL_TENANT, directory);
+  expect(
+    await tenant.transaction((tx) => importPublicObjects(tx, "general")),
+  ).toBe(1);
+  expect(
+    await tenant.transaction((tx) => importPublicObjects(tx, "general")),
+  ).toBe(0);
+  list.mockRestore();
+  const legacy = (
+    await listPublicFiles(writer, { limit: 100 }, database)
+  ).files.find((f) => f.name === "legacy 100%.pdf");
+  expect(legacy).toMatchObject({
+    size: 42,
+    content_type: "application/pdf",
+    uploaded_by: "Imported",
+    public_url:
+      "https://files.example/uploads/0b9f1b8e-2f39-4d43-9d8a-0f3c1f1f6a11/legacy%20100%25.pdf",
+  });
+  expect(new Date(legacy!.created_at).toISOString()).toBe(
+    "2026-09-15T12:00:00.000Z",
+  );
+  expect(
+    (await listPublicFiles(elsewhere, {}, database)).files.map((f) => f.name),
+  ).not.toContain("legacy 100%.pdf");
 });
