@@ -112,9 +112,10 @@ export class BoardStore {
     this.events = new EventStore(database);
   }
 
-  private async decorate<
-    T extends Pick<Message, "agent_id" | "mentions" | "sender">,
-  >(principal: Principal, items: T[]) {
+  async decorate<T extends Pick<Message, "agent_id" | "mentions" | "sender">>(
+    principal: Principal,
+    items: T[],
+  ) {
     const database = await forPrincipal(this.database, principal);
     const agents = await database.transaction((tx) => directory(tx));
     return items.map((item) => present(agents, item));

@@ -21,6 +21,8 @@ import {
   LoaderCircle,
   LogOut,
   Menu,
+  MessagesSquare,
+  Bot,
   MoreHorizontal,
   Paperclip,
   Plus,
@@ -43,10 +45,17 @@ import { MemberSettings } from "./member-settings";
 import { TenantSwitcher, PlatformTenants } from "./tenant-switcher";
 import { PublicFilesPanel } from "./public-files-panel";
 import { MemoryPanel } from "./memory-panel";
+import { AgentsPanel } from "./agents-panel";
 import type { Message, Attachment } from "@/lib/store";
 
+// Board posts carry their author and @mentions as handles.
+type Post = Omit<Message, "mentions"> & {
+  author?: { handle: string | null; display_name: string; kind: string };
+  mentions?: string[];
+};
 type Section =
   | "inbox"
+  | "agents"
   | "memory"
   | "public-files"
   | "starred"
@@ -87,7 +96,8 @@ interface Space {
   name: string;
 }
 const sectionTitle: Record<Section, string> = {
-  inbox: "Inbox",
+  inbox: "Board",
+  agents: "Agents",
   memory: "Memory",
   "public-files": "Public files",
   starred: "Starred",
@@ -119,7 +129,7 @@ export function Console({
   const [space, setSpace] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Post[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
@@ -151,11 +161,12 @@ export function Console({
       if (section === "archive") query.set("archived", "true");
       if (section === "starred") query.set("pinned", "true");
       if (filter === "unread") query.set("unread", "true");
+      if (filter === "mentions") query.set("mentioning", "me");
       if (filter === "files") query.set("with_files", "true");
       if (next) query.set("cursor", next);
       try {
         const result = await api<{
-          messages: Message[];
+          messages: Post[];
           next_cursor: string | null;
         }>(`messages?${query}`);
         if (requestId === latestList.current) {
@@ -195,7 +206,7 @@ export function Console({
     setSearch("");
     setFilter("all");
   }
-  async function togglePin(item: Message) {
+  async function togglePin(item: Post) {
     try {
       await api(`messages/${item.id}`, {
         method: "PATCH",
@@ -224,8 +235,8 @@ export function Console({
             [
               {
                 id: "inbox",
-                icon: Inbox,
-                label: "Inbox",
+                icon: MessagesSquare,
+                label: "Board",
                 count: overview?.unread,
               },
               {
@@ -269,6 +280,7 @@ export function Console({
         <nav aria-label="Management">
           {(
             [
+              { id: "agents", icon: Bot, label: "Agents" },
               { id: "connections", icon: Link2, label: "Connections" },
               { id: "activity", icon: CircleDot, label: "Activity" },
               { id: "settings", icon: Settings, label: "Settings" },
@@ -342,20 +354,22 @@ export function Console({
               </h1>
               <p>
                 {section === "inbox"
-                  ? "Messages and files relayed between your agents and apps."
+                  ? "Topics posted by your agents and you. @mentions flag who each is for; agents catch up when they choose."
                   : section === "public-files"
                     ? "Publish a file and share a permanent link anyone can download."
                     : section === "memory"
                       ? "What your agents chose to remember, logged session by session."
-                      : section === "connections"
-                        ? "The agents and apps that can reach this workspace, and what they can touch."
-                        : section === "activity"
-                          ? "A record of what arrived and who sent it."
-                          : section === "settings"
-                            ? "Spaces, members, and your account."
-                            : section === "starred"
-                              ? "Messages worth keeping within reach."
-                              : "Handled messages, kept out of the way."}
+                      : section === "agents"
+                        ? "Everyone who can post here, and what each is for."
+                        : section === "connections"
+                          ? "The agents and apps that can reach this workspace, and what they can touch."
+                          : section === "activity"
+                            ? "A record of what arrived and who sent it."
+                            : section === "settings"
+                              ? "Spaces, members, and your account."
+                              : section === "starred"
+                                ? "Topics worth keeping within reach."
+                                : "Topics set aside."}
               </p>
             </div>
             {listSection ? (
@@ -363,7 +377,7 @@ export function Console({
                 className="button primary"
                 onClick={() => setComposer(true)}
               >
-                <Plus size={17} /> New message
+                <Plus size={17} /> New topic
               </button>
             ) : section === "connections" ? (
               <button
@@ -386,16 +400,16 @@ export function Console({
             <>
               <div className="stats-row">
                 <Stat
-                  label="IN YOUR INBOX"
+                  label="TOPICS"
                   value={overview?.total}
                   icon={<Inbox size={17} />}
                   caption="Across every space you can reach"
                 />
                 <Stat
-                  label="WAITING FOR YOU"
+                  label="UNREAD"
                   value={overview?.unread}
                   icon={<CircleDot size={17} />}
-                  caption="Unread messages"
+                  caption="Topics you have not opened"
                 />
                 <Stat
                   label="CONNECTED APPS"
@@ -408,7 +422,8 @@ export function Console({
                 <div className="inbox-toolbar">
                   <div className="tabs">
                     {[
-                      ["all", "All messages"],
+                      ["all", "All topics"],
+                      ["mentions", "Mentions me"],
                       ["unread", "Unread"],
                       ["files", "With files"],
                     ].map(([id, label]) => (
@@ -426,8 +441,8 @@ export function Console({
                     <label className="search">
                       <Search size={16} />
                       <input
-                        aria-label="Search messages"
-                        placeholder="Search messages…"
+                        aria-label="Search topics"
+                        placeholder="Search topics…"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                       />
@@ -447,15 +462,15 @@ export function Console({
                   </div>
                 </div>
                 <div className="list-heading">
-                  <span>MESSAGE</span>
-                  <span>FROM / SPACE</span>
-                  <span>RECEIVED</span>
+                  <span>TOPIC</span>
+                  <span>AUTHOR / SPACE</span>
+                  <span>POSTED</span>
                   <span />
                 </div>
                 {busy && !messages.length ? (
                   <div className="loading">
-                    <LoaderCircle size={22} className="spin" /> Loading your
-                    messages…
+                    <LoaderCircle size={22} className="spin" /> Loading the
+                    board…
                   </div>
                 ) : visibleMessages.length ? (
                   visibleMessages.map((message) => (
@@ -496,23 +511,23 @@ export function Console({
                               </small>
                             )}
                             {!!message.reply_count && (
-                              <small>{message.reply_count} replies</small>
+                              <small>
+                                {message.reply_count}{" "}
+                                {message.reply_count === 1
+                                  ? "reply"
+                                  : "replies"}
+                              </small>
                             )}
                           </span>
                         </span>
                       </button>
                       <div className="message-origin">
-                        <span className="sender">
-                          <span className="sender-avatar">
-                            {message.sender.slice(0, 1)}
-                          </span>
-                          {message.sender}
-                        </span>
+                        <Byline post={message} />
                         <small>
                           <Folder size={11} />
                           {spaces.find((s) => s.slug === message.space)?.name ||
                             message.space}
-                          {message.recipient && <> · to {message.recipient}</>}
+                          <Mentions handles={message.mentions} />
                         </small>
                       </div>
                       <time
@@ -523,7 +538,7 @@ export function Console({
                       <button
                         className={`icon-button star-button ${message.pinned ? "is-pinned" : ""}`}
                         aria-label={
-                          message.pinned ? "Unstar message" : "Star message"
+                          message.pinned ? "Unstar topic" : "Star topic"
                         }
                         onClick={() => togglePin(message)}
                       >
@@ -552,12 +567,14 @@ export function Console({
                           ? "You’re all caught up."
                           : section === "archive"
                             ? "Nothing archived yet."
-                            : "Nothing has come through yet."}
+                            : filter === "mentions"
+                              ? "Nobody has mentioned you yet."
+                              : "No topics yet."}
                     </h2>
                     <p>
                       {search
                         ? "Try another phrase or look in a different space."
-                        : "Send a note, attach a file, or connect an agent. Whatever you relay here reaches every connection with access to the space."}
+                        : "Start a topic, or connect an agent. Agents post findings and hand off context here, and @mention whoever it may be for."}
                     </p>
                     <div className="button-row">
                       <button
@@ -610,6 +627,7 @@ export function Console({
           )}
           {section === "public-files" && <PublicFilesPanel spaces={spaces} />}
           {section === "memory" && <MemoryPanel spaces={spaces} />}
+          {section === "agents" && <AgentsPanel owner={owner} />}
           {section === "connections" && (
             <Connections
               baseUrl={baseUrl}
@@ -670,7 +688,6 @@ export function Console({
             "general"
           }
           spaces={spaces}
-          connections={activeConnections}
           onClose={() => setComposer(false)}
           onCreated={() => {
             setComposer(false);
@@ -998,16 +1015,38 @@ function Modal({
   );
 }
 
+function Byline({ post }: { post: Post }) {
+  const name = post.author?.display_name ?? post.sender;
+  return (
+    <span className="sender">
+      <span className="sender-avatar">{name.slice(0, 1)}</span>
+      {name}
+      {post.author?.handle && (
+        <code className="handle">@{post.author.handle}</code>
+      )}
+    </span>
+  );
+}
+
+function Mentions({ handles }: { handles?: string[] }) {
+  if (!handles?.length) return null;
+  return (
+    <span className="mentions" aria-label="Mentions">
+      {handles.map((handle) => (
+        <em key={handle}>@{handle}</em>
+      ))}
+    </span>
+  );
+}
+
 function Composer({
   initialSpace,
   spaces,
-  connections,
   onClose,
   onCreated,
 }: {
   initialSpace: string;
   spaces: Space[];
-  connections: Connection[];
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -1016,6 +1055,17 @@ function Composer({
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [space, setSpace] = useState(initialSpace);
+  const [people, setPeople] = useState<
+    { handle: string; display_name: string; kind: string }[]
+  >([]);
+  const [mentions, setMentions] = useState<string[]>([]);
+  useEffect(() => {
+    api<{
+      agents: { handle: string; display_name: string; kind: string }[];
+    }>("agents")
+      .then((result) => setPeople(result.agents))
+      .catch(() => {});
+  }, []);
   const submissionKey = useRef(crypto.randomUUID());
   const uploaded = useRef<{ space: string; ids: string[] } | null>(null);
   async function submit(event: React.SubmitEvent<HTMLFormElement>) {
@@ -1055,7 +1105,7 @@ function Composer({
         }
         uploaded.current = { space, ids };
       }
-      setStatus("Sending your message…");
+      setStatus("Posting…");
       await api("messages", {
         method: "POST",
         headers: { "Idempotency-Key": submissionKey.current },
@@ -1063,7 +1113,7 @@ function Composer({
           title: form.get("title"),
           body: form.get("body"),
           space,
-          recipient: form.get("recipient") || null,
+          mentions,
           tags: String(form.get("tags") || "")
             .split(",")
             .map((t) => t.trim())
@@ -1081,8 +1131,8 @@ function Composer({
   }
   return (
     <Modal
-      title="Send a message"
-      subtitle="Relay context to every agent that can reach this space."
+      title="Start a topic"
+      subtitle="Share context, a finding or a question with every agent in this space."
       onClose={() => {
         if (!busy) onClose();
       }}
@@ -1093,18 +1143,18 @@ function Composer({
           Title
           <input
             name="title"
-            placeholder="What should the next agent know?"
+            placeholder="What is this about?"
             maxLength={200}
             required
             disabled={busy}
           />
         </label>
         <label>
-          Note
+          Post
           <textarea
             name="body"
             rows={7}
-            placeholder="Share the context, a useful link, or what should happen next…"
+            placeholder="The context, a useful link, or what should happen next. Write @handle to mention someone."
             maxLength={200000}
             disabled={busy}
           />
@@ -1124,18 +1174,37 @@ function Composer({
               ))}
             </select>
           </label>
-          <label>
-            For
-            <select name="recipient" disabled={busy}>
-              <option value="">Anyone in this space</option>
-              {connections.map((c) => (
-                <option key={c.id} value={c.name}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
         </div>
+        {people.length > 0 && (
+          <fieldset className="mention-picker" disabled={busy}>
+            <legend>
+              Mention{" "}
+              <span className="optional">
+                optional · flags who it may be for
+              </span>
+            </legend>
+            {people.map((person) => {
+              const on = mentions.includes(person.handle);
+              return (
+                <button
+                  type="button"
+                  key={person.handle}
+                  className={`mention-chip ${on ? "selected" : ""}`}
+                  aria-pressed={on}
+                  onClick={() =>
+                    setMentions((current) =>
+                      on
+                        ? current.filter((h) => h !== person.handle)
+                        : [...current, person.handle],
+                    )
+                  }
+                >
+                  @{person.handle}
+                </button>
+              );
+            })}
+          </fieldset>
+        )}
         <label>
           Tags <span className="optional">optional · separated by commas</span>
           <input
@@ -1184,7 +1253,7 @@ function Composer({
             ) : (
               <Send size={16} />
             )}{" "}
-            Send message
+            Post topic
           </button>
         </div>
       </form>
@@ -1204,9 +1273,9 @@ function MessageDetail({
   onNotice: (message: string) => void;
 }) {
   const [detail, setDetail] = useState<{
-    message: Message;
+    message: Post;
     attachments: Attachment[];
-    replies: Message[];
+    replies: Post[];
   } | null>(null);
   const [error, setError] = useState("");
   const [reply, setReply] = useState("");
@@ -1271,7 +1340,7 @@ function MessageDetail({
     }
   }
   return (
-    <Modal title="Message details" onClose={onClose} wide>
+    <Modal title="Topic" onClose={onClose} wide>
       {error && (
         <div className="error" role="alert">
           {error}
@@ -1288,9 +1357,8 @@ function MessageDetail({
           </div>
           <h1>{detail.message.title}</h1>
           <div className="detail-sender">
-            <span className="sender-avatar">{detail.message.sender[0]}</span>
-            Left by <strong>{detail.message.sender}</strong>
-            {detail.message.recipient && <> · For {detail.message.recipient}</>}
+            <Byline post={detail.message} />
+            <Mentions handles={detail.message.mentions} />
           </div>
           <div className="note-content">
             {detail.message.body || (
@@ -1377,12 +1445,13 @@ function MessageDetail({
           </div>
           <div className="replies">
             <h3>
-              Conversation <span>{detail.replies.length}</span>
+              Replies <span>{detail.replies.length}</span>
             </h3>
             {detail.replies.map((item) => (
               <div className="reply" key={item.id}>
                 <div>
-                  <strong>{item.sender}</strong>
+                  <Byline post={item} />
+                  <Mentions handles={item.mentions} />
                   <small>{relative(item.created_at)}</small>
                 </div>
                 <p>{item.body}</p>
@@ -1393,7 +1462,7 @@ function MessageDetail({
                 aria-label="Reply"
                 value={reply}
                 onChange={(e) => setReply(e.target.value)}
-                placeholder="Leave a reply…"
+                placeholder="Reply… write @handle to mention someone"
                 rows={3}
                 required
               />
@@ -1405,7 +1474,7 @@ function MessageDetail({
         </div>
       ) : (
         <div className="loading">
-          <LoaderCircle className="spin" /> Loading message…
+          <LoaderCircle className="spin" /> Loading topic…
         </div>
       )}
     </Modal>
@@ -1426,6 +1495,23 @@ function TokenModal({
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [existing, setExisting] = useState<
+    { id: string; handle: string; display_name: string; kind: string }[]
+  >([]);
+  useEffect(() => {
+    api<{
+      agents: {
+        id: string;
+        handle: string;
+        display_name: string;
+        kind: string;
+      }[];
+    }>("agents?include_inactive=true")
+      .then((result) =>
+        setExisting(result.agents.filter((agent) => agent.kind === "agent")),
+      )
+      .catch(() => {});
+  }, []);
   async function submit(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -1441,6 +1527,7 @@ function TokenModal({
               : ["astropath:read", "astropath:write"],
           spaces: form.get("space") ? [form.get("space")] : null,
           expires_in_days: Number(form.get("expiry")),
+          ...(form.get("agent") ? { agent_id: form.get("agent") } : {}),
         }),
       });
       setToken(result.token);
@@ -1482,6 +1569,19 @@ function TokenModal({
             Application name
             <input name="name" placeholder="Muse" maxLength={80} required />
           </label>
+          {existing.length > 0 && (
+            <label>
+              Agent
+              <select name="agent" defaultValue="">
+                <option value="">New agent, or the one with this name</option>
+                {existing.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.display_name} (@{agent.handle})
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label>
             Access
             <select name="access">

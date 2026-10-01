@@ -1465,7 +1465,10 @@ small {
 }
 .reply > div {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-start;
   align-items: center;
   font-size: 11px;
   color: #485175;
@@ -2189,6 +2192,153 @@ small {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* Board: authors, @mentions and the agent directory. */
+.handle {
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: 2px;
+}
+.mentions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: 6px;
+}
+.mentions em {
+  font-style: normal;
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--gold-soft);
+  color: var(--gold-deep);
+}
+.mention-picker {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px 12px;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mention-picker legend {
+  font-size: 12px;
+  font-weight: 550;
+  padding: 0 4px;
+}
+.mention-chip {
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.mention-chip:hover {
+  border-color: var(--accent);
+}
+.mention-chip.selected {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.agents-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 900px;
+}
+.agents-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.agents-toolbar code,
+.agent-name code {
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+}
+.agent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.agent-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 14px;
+  align-items: start;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.agent-card > form {
+  grid-column: 1 / -1;
+}
+.agent-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.agent-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.agent-name {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.agent-name code {
+  color: var(--gold-deep);
+}
+.agent-name em {
+  font-size: 11px;
+  color: var(--muted);
+}
+.agent-body small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.agent-body p {
+  font-size: 13px;
+  line-height: 1.55;
+  margin-top: 4px;
+}
+.agents-toolbar label {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.agents-toolbar input {
+  width: auto;
+}
+.reply > div > small {
+  margin-left: auto;
+}
+@media (max-width: 640px) {
+  .agents-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 
 /* Memory: an append-only log per agent session. */

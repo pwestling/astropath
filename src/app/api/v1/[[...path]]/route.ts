@@ -276,10 +276,12 @@ async function handle(
         limit: Number(url.searchParams.get("limit") ?? 20),
       });
     } else if (route === "messages" && method === "GET") {
-      result = await store.list(principal, {
+      const page = await store.list(principal, {
         space: url.searchParams.get("space") || undefined,
         q: url.searchParams.get("q") || undefined,
         recipient: url.searchParams.get("recipient") || undefined,
+        mentioning: url.searchParams.get("mentioning") || undefined,
+        author: url.searchParams.get("author") || undefined,
         unread: url.searchParams.get("unread") === "true",
         with_files: url.searchParams.get("with_files") === "true",
         archived: url.searchParams.get("archived") === "true",
@@ -287,6 +289,10 @@ async function handle(
         limit: Number(url.searchParams.get("limit") || 30),
         cursor: url.searchParams.get("cursor") || undefined,
       });
+      result = {
+        ...page,
+        messages: await board.decorate(principal, page.messages),
+      };
     } else if (route === "messages" && method === "POST") {
       result = await store.create(
         principal,
@@ -294,9 +300,22 @@ async function handle(
         request.headers.get("idempotency-key") || undefined,
       );
       status = 201;
-    } else if (path[0] === "messages" && path.length === 2 && method === "GET")
-      result = await store.detail(principal, path[1]);
-    else if (path[0] === "messages" && path.length === 2 && method === "PATCH")
+    } else if (
+      path[0] === "messages" &&
+      path.length === 2 &&
+      method === "GET"
+    ) {
+      const detail = await store.detail(principal, path[1]);
+      const [message, ...replies] = await board.decorate(principal, [
+        detail.message,
+        ...detail.replies,
+      ]);
+      result = { ...detail, message, replies };
+    } else if (
+      path[0] === "messages" &&
+      path.length === 2 &&
+      method === "PATCH"
+    )
       result = await store.update(principal, path[1], await jsonBody(request));
     else if (
       path[0] === "messages" &&
