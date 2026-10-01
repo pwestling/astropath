@@ -5,7 +5,14 @@ import { AppError } from "./errors";
 import { hash, requireScope, requireSpace, type Principal } from "./policy";
 import { messageInput, listInput } from "./validation";
 import { publishMessageEvent } from "./events";
-import { agentFor, handleFrom, resolveHandles } from "./agents";
+import {
+  agentFor,
+  handleFrom,
+  mentionsIn,
+  resolveHandles,
+  resolveMentions,
+} from "./agents";
+import { ensureSession } from "./memory";
 
 export interface Message {
   encrypted_content?: string | null;
@@ -18,6 +25,8 @@ export interface Message {
   recipient: string | null;
   agent_id?: string | null;
   mentions?: string[];
+  session_id?: string | null;
+  mention_sessions?: string[];
   tags: string[];
   parent_id: string | null;
   thread_id: string;
@@ -159,7 +168,7 @@ export class MessageStore {
         input.mentioning === "me"
           ? (await agentFor(tx, principal)).id
           : input.mentioning
-            ? (await resolveHandles(tx, [input.mentioning]))[0].id
+            ? (await resolveHandles(tx, [input.mentioning.split("#")[0]]))[0].id
             : null,
         input.author ? (await resolveHandles(tx, [input.author]))[0].id : null,
       ]);
@@ -341,7 +350,10 @@ export class MessageStore {
           );
       }
       const board = tx.tenantId
-        ? await authorAndMentions(tx, principal, input)
+        ? await authorAndMentions(tx, principal, {
+            ...input,
+            space: input.space!,
+          })
         : null;
       const result = await tx.query<Message>(
         `INSERT INTO ap_messages(id,space,title,body,sender,principal_id,recipient,tags,parent_id,thread_id,idempotency_key,request_hash${tx.cipher ? ",encrypted_content" : ""})
@@ -372,11 +384,21 @@ export class MessageStore {
       );
       if (board) {
         await tx.query(
-          "UPDATE ap_messages SET agent_id=$2,mentions=$3::uuid[] WHERE id=$1",
-          [id, board.agentId, board.mentions],
+          "UPDATE ap_messages SET agent_id=$2,mentions=$3::uuid[],session_id=$4,mention_sessions=$5::uuid[] WHERE id=$1",
+          [
+            id,
+            board.agentId,
+            board.mentions,
+            board.sessionId,
+            board.mentionSessions,
+          ],
         );
-        result.rows[0].agent_id = board.agentId;
-        result.rows[0].mentions = board.mentions;
+        Object.assign(result.rows[0], {
+          agent_id: board.agentId,
+          mentions: board.mentions,
+          session_id: board.sessionId,
+          mention_sessions: board.mentionSessions,
+        });
       }
       await tx.query(
         "UPDATE ap_files SET message_id=$1 WHERE id=ANY($2::uuid[])",
@@ -487,31 +509,60 @@ export class MessageStore {
     return decodeFile(database, file);
   }
 }
-// Explicit mentions must name real handles. @handles written in the body and
-// a legacy recipient that matches a handle are picked up leniently.
+// Explicit mentions must name real agents and sessions. @mentions written in
+// the body, and a legacy recipient that matches a handle, are picked up
+// leniently. A session mention also mentions its agent.
 async function authorAndMentions(
   tx: Queryable,
   principal: Principal,
-  input: { body: string; mentions: string[]; recipient?: string | null },
+  input: {
+    body: string;
+    space: string;
+    mentions: string[];
+    recipient?: string | null;
+    session_key?: string;
+    session_name?: string;
+    session_context?: string;
+  },
 ) {
   const author = await agentFor(tx, principal);
-  const ids = new Set(
-    (await resolveHandles(tx, input.mentions)).map((row) => row.id),
+  const session = input.session_key
+    ? await ensureSession(tx, principal, input.space, {
+        session_key: input.session_key,
+        name: input.session_name,
+        context: input.session_context,
+      })
+    : null;
+  const strict = await resolveMentions(tx, input.mentions, true);
+  const loose = await resolveMentions(
+    tx,
+    [
+      ...mentionsIn(input.body),
+      ...(input.recipient ? [handleFrom(input.recipient)] : []),
+    ],
+    false,
   );
-  const loose = [
-    ...input.body.matchAll(/(?:^|[^\w@.])@([a-z0-9][a-z0-9-]{0,31})\b/gi),
-  ].map((match) => match[1].toLowerCase());
-  if (input.recipient) loose.push(handleFrom(input.recipient));
-  if (loose.length)
-    for (const row of (
-      await tx.query<{ id: string }>(
-        "SELECT id FROM ap_agents WHERE handle=ANY($1::text[])",
-        [loose],
-      )
-    ).rows)
-      ids.add(row.id);
-  ids.delete(author.id);
-  return { agentId: author.id, mentions: [...ids] };
+  const agents = new Set([...strict.agents, ...loose.agents]);
+  // Mentioning yourself is noise, but one session may flag a sibling session
+  // of the same agent (e.g. the session working in another project).
+  const sessions = new Set([...strict.sessions, ...loose.sessions]);
+  if (session) sessions.delete(session.id);
+  const siblings = sessions.size
+    ? (
+        await tx.query<{ id: string }>(
+          `SELECT s.id FROM ap_agent_sessions s JOIN ap_connections c ON c.id::text=s.principal_id
+          WHERE s.id=ANY($1::uuid[]) AND c.agent_id=$2`,
+          [[...sessions], author.id],
+        )
+      ).rows
+    : [];
+  if (!siblings.length) agents.delete(author.id);
+  return {
+    agentId: author.id,
+    sessionId: session?.id ?? null,
+    mentions: [...agents],
+    mentionSessions: [...sessions],
+  };
 }
 
 export const store = new MessageStore(db);

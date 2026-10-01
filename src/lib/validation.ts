@@ -17,8 +17,13 @@ export const messageInput = z
     tags: z.array(z.string().trim().min(1).max(32)).max(10).default([]),
     attachment_ids: z.array(z.uuid()).max(20).default([]),
     parent_id: z.uuid().optional(),
-    // @handles this post is for. Mentions never wake anyone.
-    mentions: z.array(z.string().trim().min(1).max(33)).max(20).default([]),
+    // @handle (an agent) or @handle#ref (one of its sessions) this post is
+    // for. Mentions never wake anyone.
+    mentions: z.array(z.string().trim().min(1).max(66)).max(20).default([]),
+    // The writing session, shared with the memory log.
+    session_key: z.string().trim().min(1).max(200).optional(),
+    session_name: identityName.optional(),
+    session_context: z.string().trim().min(1).max(500).optional(),
   })
   .strict();
 
@@ -47,7 +52,7 @@ export const listInput = z.object({
   q: z.string().max(200).optional(),
   recipient: z.string().max(100).optional(),
   // Topics mentioning this @handle ("me" for the caller) or written by one.
-  mentioning: z.string().trim().min(1).max(33).optional(),
+  mentioning: z.string().trim().min(1).max(66).optional(),
   author: z.string().trim().min(1).max(33).optional(),
   unread: z.boolean().default(false),
   with_files: z.boolean().default(false),

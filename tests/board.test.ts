@@ -12,6 +12,8 @@ import { migrateTenancy, INITIAL_TENANT } from "../src/lib/tenant-migration";
 import { newTenantKey } from "../src/lib/encryption";
 import { board } from "../src/lib/board";
 import { store } from "../src/lib/store";
+import { memory } from "../src/lib/memory";
+import { agents } from "../src/lib/agents";
 import { mintToken, type Principal } from "../src/lib/policy";
 import { GET, POST, PATCH } from "../src/app/api/v1/[[...path]]/route";
 import { POST as mcpPost } from "../src/app/mcp/route";
@@ -373,4 +375,168 @@ it("serves the board over HTTP and MCP", async () => {
   } finally {
     await client.close();
   }
+});
+
+it("attributes posts to sessions and lets others mention one session", async () => {
+  const session = {
+    session_key: "codex:astropath-1",
+    session_name: "Astropath board redesign",
+    session_context: "Codex in ~/dev/personal/astropath",
+  };
+  // The board and the memory log share session records.
+  const remembered = await memory.remember(agent, {
+    ...session,
+    body: "Started the board work.",
+    idempotency_key: "board-session-memory",
+  });
+  const { topic } = await board.postTopic(agent, {
+    ...session,
+    title: "Session-attributed topic",
+    body: "Posted from a specific conversation.",
+  });
+  const ref = remembered.session!.id.replace(/-/g, "").slice(0, 8);
+  expect(topic.author).toMatchObject({
+    handle: "codex",
+    session: {
+      ref,
+      name: "Astropath board redesign",
+      context: "Codex in ~/dev/personal/astropath",
+    },
+  });
+  // Another Codex session that should not claim the mention.
+  await board.postTopic(agent, {
+    session_key: "codex:other-work",
+    session_name: "Sidereal experiments",
+    title: "Other session",
+    body: "Unrelated.",
+  });
+  const directory = (await agents.list(other)).agents.find(
+    (item) => item.handle === "codex",
+  )!;
+  expect(directory.recent_sessions.map((item) => item.ref)).toContain(ref);
+  expect(directory.recent_sessions[0]).toHaveProperty("name");
+
+  await board.catchUp(agent, {});
+  const explicit = await board.reply(other, {
+    topic_id: topic.id,
+    body: "Picking this up.",
+    mentions: [`@codex#${ref}`],
+  });
+  expect(explicit.message.mentions).toEqual([`codex#${ref}`]);
+  const inline = await board.postTopic(other, {
+    title: "Inline session mention",
+    body: `@codex#${ref} please check the migration.`,
+  });
+  expect(inline.topic.mentions).toEqual([`codex#${ref}`]);
+  await expect(
+    board.postTopic(other, {
+      title: "Bad ref",
+      body: "",
+      mentions: ["@codex#ffffffff"],
+    }),
+  ).rejects.toMatchObject({ code: "unknown_session" });
+  // An unknown ref written in a body still mentions the agent.
+  const loose = await board.postTopic(other, {
+    title: "Loose ref",
+    body: "@codex#ffffffff hello",
+  });
+  expect(loose.topic.mentions).toEqual(["codex"]);
+
+  const fromThisSession = await board.catchUp(agent, {
+    peek: true,
+    session_key: "codex:astropath-1",
+  });
+  const flagged = fromThisSession.mentions.find(
+    (item) => item.title === "Inline session mention",
+  )!;
+  expect(flagged).toMatchObject({
+    for_sessions: [{ ref, name: "Astropath board redesign" }],
+    for_this_session: true,
+  });
+  const fromOtherSession = await board.catchUp(agent, {
+    session_key: "codex:other-work",
+  });
+  expect(
+    fromOtherSession.mentions.find(
+      (item) => item.title === "Inline session mention",
+    ),
+  ).toMatchObject({ for_this_session: false });
+  expect(
+    fromOtherSession.mentions.find((item) => item.title === "Loose ref"),
+  ).not.toHaveProperty("for_sessions");
+});
+
+it("hides sessions in spaces the viewer cannot access", async () => {
+  const lev: Principal = {
+    ...agent,
+    id: randomUUID(),
+    name: "Lev",
+    spaces: ["general", "private"],
+  };
+  await directory.query(
+    "INSERT INTO ap_connections(id,tenant_id,name,kind,scopes,spaces,created_by_user_id) VALUES($1,$2,'Lev','token',$3,$4,'owner')",
+    [lev.id, INITIAL_TENANT, lev.scopes, lev.spaces],
+  );
+  await memory.remember(lev, {
+    space: "private",
+    session_key: "lev-private",
+    session_name: "Private planning",
+    body: "Private.",
+    idempotency_key: "lev-private-memory",
+  });
+  const sessionsSeenBy = async (viewer: Principal) =>
+    (await agents.list(viewer)).agents
+      .find((item) => item.handle === "lev")!
+      .recent_sessions.map((session) => session.name);
+  expect(await sessionsSeenBy(human)).toContain("Private planning");
+  expect(await sessionsSeenBy(agent)).not.toContain("Private planning");
+});
+
+it("delivers a session mention to that session even after a sibling caught up", async () => {
+  const sessionA = { session_key: "codex:a", session_name: "Session A" };
+  const b = await memory.remember(agent, {
+    session_key: "codex:b",
+    session_name: "Session B",
+    body: "Session B exists.",
+    idempotency_key: "codex-b-exists",
+  });
+  const refB = b.session!.id.replace(/-/g, "").slice(0, 8);
+  await board.catchUp(agent, {});
+  // A sibling session of the same agent can flag session B.
+  const { topic } = await board.postTopic(agent, {
+    ...sessionA,
+    title: "For my sibling",
+    body: `@codex#${refB} you own the migration.`,
+  });
+  expect(topic.mentions).toEqual([`codex#${refB}`]);
+  // Session A catches up first: its own post is not reported back to it,
+  // and the agent cursor moves past it.
+  const a = await board.catchUp(agent, { session_key: "codex:a" });
+  expect(a.mentions.map((item) => item.title)).not.toContain("For my sibling");
+  // Session B still receives it from its own session cursor.
+  const forB = await board.catchUp(agent, { session_key: "codex:b" });
+  expect(
+    forB.mentions.find((item) => item.title === "For my sibling"),
+  ).toMatchObject({ for_this_session: true });
+  expect(
+    (await board.catchUp(agent, { session_key: "codex:b" })).mentions,
+  ).toEqual([]);
+  // The same holds for another agent mentioning session B.
+  await board.postTopic(other, {
+    title: "Claude to session B",
+    body: `@codex#${refB} heads up.`,
+  });
+  await board.catchUp(agent, {});
+  expect(
+    (await board.catchUp(agent, { session_key: "codex:b" })).mentions.map(
+      (item) => item.title,
+    ),
+  ).toEqual(["Claude to session B"]);
+  // A session mentioning only itself mentions no one.
+  const self = await board.postTopic(agent, {
+    ...sessionA,
+    title: "Note to self",
+    body: "@codex reminder",
+  });
+  expect(self.topic.mentions).toEqual([]);
 });

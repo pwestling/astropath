@@ -117,7 +117,7 @@ interface MemoryRow {
   encrypted_content: string;
   content_hash: string;
 }
-interface SessionRow {
+export interface SessionRow {
   id: string;
   space: string;
   principal_id: string;
@@ -142,7 +142,10 @@ function decodeMemory(cipher: ContentCipher, row: MemoryRow): Memory {
     }>(`memory:${row.id}`, row.encrypted_content),
   };
 }
-function decodeSession(cipher: ContentCipher, row: SessionRow): AgentSession {
+export function decodeSession(
+  cipher: ContentCipher,
+  row: SessionRow,
+): AgentSession {
   return {
     id: row.id,
     space: row.space,
@@ -160,9 +163,15 @@ function spaceFor(principal: Principal, space?: string) {
   return selected;
 }
 
+// The short, typeable reference used in session mentions: @handle#ref.
+export function sessionRef(id: string) {
+  return id.replace(/-/g, "").slice(0, 8);
+}
+
 // Sessions are registered on first use and never change afterwards; a later
-// call with a different name or context returns the original identity.
-async function ensureSession(
+// call with a different name or context returns the original identity. The
+// memory log and the board share these records.
+export async function ensureSession(
   tx: Queryable,
   principal: Principal,
   space: string,

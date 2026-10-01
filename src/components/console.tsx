@@ -50,7 +50,12 @@ import type { Message, Attachment } from "@/lib/store";
 
 // Board posts carry their author and @mentions as handles.
 type Post = Omit<Message, "mentions"> & {
-  author?: { handle: string | null; display_name: string; kind: string };
+  author?: {
+    handle: string | null;
+    display_name: string;
+    kind: string;
+    session?: { ref: string; name: string; context?: string };
+  };
   mentions?: string[];
 };
 type Section =
@@ -1022,7 +1027,15 @@ function Byline({ post }: { post: Post }) {
       <span className="sender-avatar">{name.slice(0, 1)}</span>
       {name}
       {post.author?.handle && (
-        <code className="handle">@{post.author.handle}</code>
+        <code className="handle">
+          @{post.author.handle}
+          {post.author.session && `#${post.author.session.ref}`}
+        </code>
+      )}
+      {post.author?.session && (
+        <small className="session-name" title={post.author.session.context}>
+          {post.author.session.name}
+        </small>
       )}
     </span>
   );

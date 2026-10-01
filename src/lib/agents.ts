@@ -4,6 +4,7 @@ import { db, forPrincipal, type Database, type Queryable } from "./db";
 import type { ContentCipher } from "./encryption";
 import { AppError } from "./errors";
 import { requireAccount, requireScope, type Principal } from "./policy";
+import { decodeSession, sessionRef, type SessionRow } from "./memory";
 
 export const handleSchema = z
   .string()
@@ -33,6 +34,12 @@ export interface AgentProfile {
   harness?: string;
   description?: string;
 }
+export interface SessionSummary {
+  ref: string;
+  name: string;
+  context?: string;
+  last_active_at: string;
+}
 export interface Agent extends AgentProfile {
   id: string;
   handle: string;
@@ -40,6 +47,8 @@ export interface Agent extends AgentProfile {
   active: boolean;
   last_active_at: string | null;
   created_at: string;
+  // Mention one of these as @handle#ref.
+  recent_sessions: SessionSummary[];
 }
 interface AgentRow {
   id: string;
@@ -201,6 +210,97 @@ export async function resolveHandles(tx: Queryable, handles: string[]) {
   return rows;
 }
 
+// "@handle" mentions an agent; "@handle#ref" one of its sessions, where ref
+// is the start of the session id (see sessionRef). In body text, unknown
+// handles are ignored; in an explicit mentions list they are an error.
+export const mentionPattern =
+  /(?:^|[^\w@.])@([a-z0-9][a-z0-9-]{0,31})(?:#([0-9a-f]{6,32}))?(?![\w-])/gi;
+export function mentionsIn(text: string) {
+  return [...text.matchAll(mentionPattern)].map((match) =>
+    match[2] ? `${match[1]}#${match[2]}` : match[1],
+  );
+}
+export async function resolveMentions(
+  tx: Queryable,
+  tokens: string[],
+  strict: boolean,
+) {
+  const agentIds = new Set<string>();
+  const sessionIds = new Set<string>();
+  for (const raw of tokens) {
+    const [handle, ref] = raw.replace(/^@/, "").toLowerCase().split("#");
+    const agent = (
+      await tx.query<{ id: string }>(
+        "SELECT id FROM ap_agents WHERE handle=$1",
+        [handle],
+      )
+    ).rows[0];
+    if (!agent) {
+      if (strict)
+        throw new AppError(
+          400,
+          "unknown_handle",
+          `No agent has the handle @${handle}. Use list_agents to find handles.`,
+        );
+      continue;
+    }
+    agentIds.add(agent.id);
+    if (ref === undefined) continue;
+    const sessions = /^[0-9a-f]{6,32}$/.test(ref)
+      ? (
+          await tx.query<{ id: string }>(
+            `SELECT s.id FROM ap_agent_sessions s JOIN ap_connections c ON c.id::text=s.principal_id
+            WHERE c.agent_id=$1 AND replace(s.id::text,'-','') LIKE $2`,
+            [agent.id, `${ref}%`],
+          )
+        ).rows
+      : [];
+    if (sessions.length === 1) sessionIds.add(sessions[0].id);
+    else if (strict)
+      throw new AppError(
+        400,
+        sessions.length ? "ambiguous_session" : "unknown_session",
+        sessions.length
+          ? `@${handle}#${ref} matches several sessions; use a longer reference.`
+          : `@${handle} has no session #${ref}. list_agents shows recent sessions.`,
+      );
+  }
+  return { agents: [...agentIds], sessions: [...sessionIds] };
+}
+
+// Recent sessions per agent, most recently active first.
+async function recentSessions(
+  tx: Queryable,
+  spaces: string[] | null,
+  perAgent = 5,
+) {
+  const rows = (
+    await tx.query<SessionRow & { agent_id: string; last_active_at: string }>(
+      `SELECT s.*,c.agent_id,GREATEST(s.created_at,
+          (SELECT max(m.created_at) FROM ap_memories m WHERE m.session_id=s.id),
+          (SELECT max(p.created_at) FROM ap_messages p WHERE p.session_id=s.id)) AS last_active_at
+        FROM ap_agent_sessions s JOIN ap_connections c ON c.id::text=s.principal_id
+        WHERE c.agent_id IS NOT NULL AND ($1::text[] IS NULL OR s.space=ANY($1))
+        ORDER BY last_active_at DESC`,
+      [spaces],
+    )
+  ).rows;
+  const byAgent = new Map<string, SessionSummary[]>();
+  for (const row of rows) {
+    const list = byAgent.get(row.agent_id) ?? [];
+    if (list.length >= perAgent) continue;
+    const session = decodeSession(tx.cipher!, row);
+    list.push({
+      ref: sessionRef(row.id),
+      name: session.name,
+      ...(session.context ? { context: session.context } : {}),
+      last_active_at: row.last_active_at,
+    });
+    byAgent.set(row.agent_id, list);
+  }
+  return byAgent;
+}
+
 export class AgentStore {
   constructor(private database: Database) {}
 
@@ -208,9 +308,9 @@ export class AgentStore {
     requireScope(principal, "astropath:read");
     const input = listAgentsInput.parse(raw);
     const database = await forPrincipal(this.database, principal);
-    const rows = await database.transaction(async (tx) => {
+    const [rows, sessions] = await database.transaction(async (tx) => {
       await ensureMemberAgents(tx);
-      return (
+      const rows = (
         await tx.query<
           AgentRow & { active: boolean; last_active_at: string | null }
         >(
@@ -222,6 +322,7 @@ export class AgentStore {
         FROM ap_agents a ORDER BY a.kind, a.handle`,
         )
       ).rows;
+      return [rows, await recentSessions(tx, principal.spaces)] as const;
     });
     const agents: Agent[] = rows
       .filter((row) => input.include_inactive || row.active)
@@ -233,6 +334,7 @@ export class AgentStore {
         last_active_at: row.last_active_at,
         created_at: row.created_at,
         ...decodeProfile(database.cipher!, row),
+        recent_sessions: sessions.get(row.id) ?? [],
       }));
     return { agents };
   }
@@ -359,8 +461,7 @@ async function ensureMemberAgents(tx: Queryable) {
       AND (expires_at IS NULL OR expires_at>now()) ORDER BY created_at,id`,
     )
   ).rows;
-  for (const connection of connections)
-    await attachConnection(tx, connection);
+  for (const connection of connections) await attachConnection(tx, connection);
   const members = (
     await tx.query<{ user_id: string; name: string }>(
       `SELECT m.user_id,m.name FROM ap_members m WHERE m.user_id IS NOT NULL

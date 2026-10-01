@@ -2321,6 +2321,38 @@ small {
   line-height: 1.55;
   margin-top: 4px;
 }
+.session-name {
+  color: var(--muted);
+  font-size: 11px;
+  margin-left: 4px;
+}
+.agent-sessions {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+}
+.agent-sessions li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+.agent-sessions code {
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  color: var(--gold-deep);
+  white-space: nowrap;
+}
+.agent-sessions span {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .agents-toolbar label {
   flex-direction: row;
   align-items: center;

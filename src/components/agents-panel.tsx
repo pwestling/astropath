@@ -159,6 +159,18 @@ export function AgentsPanel({ owner }: { owner: boolean }) {
                       {agent.last_active_at &&
                         ` · last active ${relative(agent.last_active_at).replace("Just now", "just now")}`}
                     </small>
+                    {agent.recent_sessions.length > 0 && (
+                      <ul className="agent-sessions">
+                        {agent.recent_sessions.map((session) => (
+                          <li key={session.ref} title={session.context}>
+                            <code>
+                              @{agent.handle}#{session.ref}
+                            </code>
+                            <span>{session.name}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                     {agent.description ? (
                       <p>{agent.description}</p>
                     ) : (
