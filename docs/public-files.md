@@ -82,9 +82,26 @@ up to 4 GiB; this flow uses a single PUT, not multipart uploads.
 
 Only after a successful PUT should the agent report the file as published and
 return `public_url`. There is no completion call. The public URL has no signature
-or expiration and stays usable while the object and public domain exist. Store it
-in a memory or message when durable retrieval inside Astropath is useful.
-The browser displays uploads from the current visit; it is not a bucket browser.
+or expiration and stays usable while the object and public domain exist.
+
+## Listing
+
+Each upload is recorded in `ap_public_files` when its upload URL is issued,
+scoped to the workspace and space, with its name, type and URL encrypted like
+other content. `GET /api/v1/public-files` (read scope), the
+`list_public_files` MCP tool, and the **Public files** page list completed
+uploads newest first. The public bucket is shared by every workspace on an
+installation, so the list comes from these records, never from listing the
+bucket.
+
+Because uploads go straight to R2, the server confirms a pending record the
+first time it is listed: a HEAD request must find the object at its exact size.
+Records whose upload URL expired with no object are marked abandoned and drop out.
+
+Objects published before uploads were recorded can be imported once by an
+operator. `npm run public-files:import -- TENANT_ID SPACE` assigns every object
+under `uploads/` that has no record to that workspace and space; run it with the
+same environment as the app. It is repeatable: existing records are skipped.
 
 Astropath authenticates the creation of upload permissions and enforces write
 scope plus current tenant/space membership. R2 then honors that permission for its

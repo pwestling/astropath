@@ -2382,8 +2382,7 @@ small {
   display: grid;
   gap: 8px;
 }
-.public-files-panel select,
-.public-file-result input {
+.public-files-panel select {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--line);
@@ -2391,17 +2390,64 @@ small {
   background: var(--surface);
   color: inherit;
 }
-.public-file-result {
+.public-files-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.public-files-heading small {
+  color: var(--muted);
+}
+.public-file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.public-file-row {
   display: grid;
-  gap: 10px;
-  min-width: 0;
-  padding-top: 16px;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
   border-top: 1px solid var(--line);
+}
+.public-file-row > svg {
+  color: var(--muted);
+}
+.public-file-row > div:first-of-type {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.public-file-row a:not(.button) {
+  font-weight: 600;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.public-file-row a:not(.button):hover {
+  text-decoration: underline;
+}
+.public-file-row small {
+  color: var(--muted);
+  font-size: 12px;
 }
 .public-file-actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
+}
+.public-file-actions a {
+  text-decoration: none;
+}
+@media (max-width: 640px) {
+  .public-file-row {
+    grid-template-columns: auto 1fr;
+  }
+  .public-file-actions {
+    grid-column: 2;
+  }
 }
 .public-files-panel progress {
   width: 100%;

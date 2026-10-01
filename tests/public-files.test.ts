@@ -8,6 +8,7 @@ import type { Principal } from "../src/lib/policy";
 
 const state = vi.hoisted(() => ({
   tenants: [] as string[],
+  recorded: [] as unknown[][],
   spaces: new Set(["general"]),
 }));
 vi.mock("../src/lib/db", async (original) => {
@@ -18,9 +19,22 @@ vi.mock("../src/lib/db", async (original) => {
       forTenant: async (tenant: string) => {
         state.tenants.push(tenant);
         return {
-          query: async (_sql: string, values: string[]) => ({
-            rows: state.spaces.has(values[0]) ? [{ slug: values[0] }] : [],
-          }),
+          query: async (sql: string, values: unknown[]) => {
+            if (sql.includes("INSERT INTO ap_public_files")) {
+              state.recorded.push(values);
+              return { rows: [] };
+            }
+            return {
+              rows: state.spaces.has(values[0] as string)
+                ? [{ slug: values[0] }]
+                : [],
+            };
+          },
+          cipher: {
+            fingerprint: (_domain: string, value: string) => `hash:${value}`,
+            encrypt: (_context: string, value: unknown) =>
+              JSON.stringify(value),
+          },
         };
       },
     },
@@ -41,6 +55,7 @@ const input = {
 };
 beforeEach(() => {
   state.tenants.length = 0;
+  state.recorded.length = 0;
   for (const [key, value] of Object.entries({
     APP_URL: "https://astropath.example",
     R2_ACCOUNT_ID: "test-account",
@@ -92,6 +107,11 @@ it("signs a separate public object with exact metadata and create-only upload pe
     /private-key|private-secret|public-secret/,
   );
   expect(state.tenants).toEqual([writer.tenantId]);
+  // The ticket is recorded so the workspace can list it once uploaded.
+  expect(state.recorded[0]).toEqual(
+    expect.arrayContaining([result.id, "general", 1234, writer.id]),
+  );
+  expect(JSON.stringify(state.recorded[0])).toContain(result.public_url);
   expect((await createPublicUpload(writer, input)).public_url).not.toBe(
     result.public_url,
   );

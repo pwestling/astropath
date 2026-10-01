@@ -1,4 +1,4 @@
-import { publicUploadInput } from "@/lib/public-files";
+import { listPublicFilesInput, publicUploadInput } from "@/lib/public-files";
 import { z } from "zod";
 import { appUrl } from "@/lib/config";
 import { messageInput, fileInput } from "@/lib/validation";
@@ -68,11 +68,27 @@ export function GET() {
             responses: response,
           },
         },
+        "/public-files": {
+          get: {
+            operationId: "listPublicFiles",
+            summary: "List this workspace's public files",
+            description:
+              "Requires read scope. Returns files published in accessible spaces, newest first: id, name, content_type, size, public_url, uploaded_by, space and created_at. An upload appears once its PUT has landed in the bucket; tickets that expired without an upload are dropped. Pass next_before as before.",
+            parameters: Object.entries(listPublicFilesInput.shape).map(
+              ([name, value]) => ({
+                name,
+                in: "query",
+                schema: z.toJSONSchema(value as z.ZodType),
+              }),
+            ),
+            responses: response,
+          },
+        },
         "/public-files/uploads": {
           post: {
             summary: "Create a direct upload to the separate public R2 bucket",
             description:
-              "Requires write scope and an accessible space. PUT original bytes to upload_url with the returned headers (no Astropath Authorization header). After PUT succeeds, public_url is a stable unauthenticated download URL independent of Astropath. This creates no private attachment or inbox record. Upload URL expires in one hour. Maximum 4 GiB; objects cannot be overwritten. Browsers set Content-Length automatically.",
+              "Requires write scope and an accessible space. PUT original bytes to upload_url with the returned headers (no Astropath Authorization header). After PUT succeeds, public_url is a stable unauthenticated download URL independent of Astropath. This creates no private attachment or inbox record; the upload is recorded for GET /public-files. Upload URL expires in one hour. Maximum 4 GiB; objects cannot be overwritten. Browsers set Content-Length automatically.",
             requestBody: body(z.toJSONSchema(publicUploadInput)),
             responses: {
               ...response,

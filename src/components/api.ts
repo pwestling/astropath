@@ -24,7 +24,8 @@ export function bytes(size: number | string) {
   const value = Number(size);
   if (value < 1024) return `${value} B`;
   if (value < 1048576) return `${(value / 1024).toFixed(0)} KB`;
-  return `${(value / 1048576).toFixed(1)} MB`;
+  if (value < 1073741824) return `${(value / 1048576).toFixed(1)} MB`;
+  return `${(value / 1073741824).toFixed(1)} GB`;
 }
 export function relative(date: string) {
   const minutes = Math.max(

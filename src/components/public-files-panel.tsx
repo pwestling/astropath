@@ -1,10 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Copy, ExternalLink, Upload } from "lucide-react";
-import { api, bytes } from "./api";
+import { Copy, ExternalLink, FileText, Upload } from "lucide-react";
+import { api, bytes, relative } from "./api";
+import type { PublicFile } from "@/lib/public-files";
 
-type Uploaded = { name: string; public_url: string; size: number };
+type Ticket = {
+  name: string;
+  upload_url: string;
+  headers: Record<string, string>;
+};
+type FilePage = { files: PublicFile[]; next_before: string | null };
 
 export function PublicFilesPanel({
   spaces,
@@ -17,7 +23,8 @@ export function PublicFilesPanel({
   } | null>(null);
   const [space, setSpace] = useState(spaces[0]?.slug || "general");
   const [file, setFile] = useState<File | null>(null);
-  const [results, setResults] = useState<Uploaded[]>([]);
+  const [listing, setListing] = useState<FilePage | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
@@ -31,10 +38,36 @@ export function PublicFilesPanel({
       .catch(() => {
         if (active) setError("Unable to check public upload availability.");
       });
+    loadFiles().catch(() => {
+      if (active) setError("Unable to load public files.");
+    });
     return () => {
       active = false;
     };
   }, []);
+
+  async function loadFiles(before?: string) {
+    const params = new URLSearchParams({ limit: "30" });
+    if (before) params.set("before", before);
+    const page = await api<FilePage>(`public-files?${params}`);
+    setListing((previous) =>
+      before && previous
+        ? {
+            files: [...previous.files, ...page.files],
+            next_before: page.next_before,
+          }
+        : page,
+    );
+  }
+
+  async function copy(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(url);
+    } catch {
+      setError("Open the file and copy its address manually.");
+    }
+  }
 
   async function upload() {
     if (!file || busy) return;
@@ -42,9 +75,7 @@ export function PublicFilesPanel({
     setError("");
     setProgress(0);
     try {
-      const ticket = await api<
-        Uploaded & { upload_url: string; headers: Record<string, string> }
-      >("public-files/uploads", {
+      const ticket = await api<Ticket>("public-files/uploads", {
         method: "POST",
         body: JSON.stringify({
           name: file.name,
@@ -68,7 +99,9 @@ export function PublicFilesPanel({
           request.status >= 200 && request.status < 300
             ? resolve()
             : reject(
-                new Error("R2 did not accept the upload. Please try again."),
+                new Error(
+                  "File storage did not accept the upload. Please try again.",
+                ),
               );
         request.onerror = () =>
           reject(
@@ -78,11 +111,10 @@ export function PublicFilesPanel({
           );
         request.send(file);
       });
-      setResults((previous) => [
-        { name: ticket.name, size: ticket.size, public_url: ticket.public_url },
-        ...previous,
-      ]);
       setFile(null);
+      setCopied("");
+      // The listing confirms the finished upload against the bucket.
+      await loadFiles();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Upload failed.");
     } finally {
@@ -95,8 +127,8 @@ export function PublicFilesPanel({
       <section className="surface settings-card">
         <h2>Upload a public file</h2>
         <p>
-          Anyone with the link can download the original file directly from R2.
-          The link works without Astropath and does not expire.
+          Anyone with the link can download the original file. The link works
+          without Astropath and does not expire.
         </p>
         {error && (
           <div className="error" role="alert">
@@ -107,20 +139,22 @@ export function PublicFilesPanel({
           <p>Public uploads have not been configured on this instance.</p>
         ) : (
           <>
-            <label>
-              Workspace space
-              <select
-                value={space}
-                disabled={busy}
-                onChange={(event) => setSpace(event.target.value)}
-              >
-                {spaces.map((item) => (
-                  <option key={item.slug} value={item.slug}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {spaces.length > 1 && (
+              <label>
+                Space
+                <select
+                  value={space}
+                  disabled={busy}
+                  onChange={(event) => setSpace(event.target.value)}
+                >
+                  {spaces.map((item) => (
+                    <option key={item.slug} value={item.slug}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="upload-zone">
               <Upload size={24} />
               <span>
@@ -163,49 +197,88 @@ export function PublicFilesPanel({
           </>
         )}
       </section>
-      {results.length > 0 && (
-        <section className="surface settings-card">
-          <h2>Uploaded in this visit</h2>
-          <p>Copy these links to keep or share them.</p>
-          {results.map((item) => (
-            <div className="public-file-result" key={item.public_url}>
-              <strong>{item.name}</strong>
-              <small>{bytes(item.size)}</small>
-              <input
-                aria-label={`Public URL for ${item.name}`}
-                readOnly
-                value={item.public_url}
-                onFocus={(event) => event.target.select()}
-              />
-              <div className="public-file-actions">
-                <button
-                  className="button"
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(item.public_url);
-                      setCopied(item.public_url);
-                    } catch {
-                      setError("Select the URL and copy it manually.");
-                    }
-                  }}
-                >
-                  <Copy size={16} />
-                  {copied === item.public_url ? "Copied" : "Copy URL"}
-                </button>
-                <a
-                  className="button"
-                  href={item.public_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <ExternalLink size={16} />
-                  Download
-                </a>
-              </div>
-            </div>
-          ))}
-        </section>
-      )}
+      <section className="surface settings-card">
+        <div className="public-files-heading">
+          <h2>Public files</h2>
+          {listing && listing.files.length > 0 && (
+            <small>
+              {listing.files.length}
+              {listing.next_before ? "+" : ""}{" "}
+              {listing.files.length === 1 ? "file" : "files"}
+            </small>
+          )}
+        </div>
+        {!listing ? (
+          <p className="small" role="status">
+            Loading public files…
+          </p>
+        ) : listing.files.length ? (
+          <ul className="public-file-list">
+            {listing.files.map((item) => (
+              <li className="public-file-row" key={item.id}>
+                <FileText size={18} />
+                <div>
+                  <a
+                    href={item.public_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {item.name}
+                  </a>
+                  <small>
+                    {bytes(item.size)} · {item.uploaded_by} ·{" "}
+                    <time dateTime={item.created_at} title={item.created_at}>
+                      {relative(item.created_at)}
+                    </time>
+                    {spaces.length > 1 && <> · {item.space}</>}
+                  </small>
+                </div>
+                <div className="public-file-actions">
+                  <button
+                    className="button small-button"
+                    onClick={() => copy(item.public_url)}
+                  >
+                    <Copy size={14} />
+                    {copied === item.public_url ? "Copied" : "Copy link"}
+                  </button>
+                  <a
+                    className="button small-button"
+                    href={item.public_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Open ${item.name}`}
+                  >
+                    <ExternalLink size={14} />
+                    Open
+                  </a>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>
+            No public files yet. Files you or your agents publish appear here.
+          </p>
+        )}
+        {listing?.next_before && (
+          <button
+            className="button"
+            disabled={loadingMore}
+            onClick={async () => {
+              setLoadingMore(true);
+              try {
+                await loadFiles(listing.next_before!);
+              } catch {
+                setError("Unable to load more public files.");
+              } finally {
+                setLoadingMore(false);
+              }
+            }}
+          >
+            Load more
+          </button>
+        )}
+      </section>
     </div>
   );
 }

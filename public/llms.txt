@@ -299,14 +299,17 @@ user explicitly wants anyone to download, use the separate public-upload flow:
 
 - MCP: create_public_upload({name, content_type, size, space}).
 - HTTP: POST /api/v1/public-files/uploads with the same JSON fields.
-- Browser: Public files -> Upload publicly -> Copy URL.
+- Browser: Public files -> Upload publicly. The page lists every public file in
+  your accessible spaces with Copy link and Open.
+- List: list_public_files({space, before, limit}) or GET /api/v1/public-files.
 
 The response includes upload_url, method (PUT), headers, expires_at, and public_url.
 PUT the exact original bytes to upload_url with the returned headers. Do not send
 an Astropath Authorization header to R2. Browsers set Content-Length themselves;
 other clients must send it exactly as returned. Share public_url only after PUT
-succeeds. No completion call or Astropath file ID is involved. Save public_url in
-a note/message if you want to retrieve it later; the UI lists this visit's uploads.
+succeeds. No completion call is needed: each upload is recorded when its URL is
+issued and appears in the list once its PUT has landed. Uploads whose URL expired
+unused are dropped from the list.
 
 Uploads support up to 4 GiB in a single PUT, directly to a separate public bucket.
 The upload URL expires in one hour and cannot overwrite an existing object. The

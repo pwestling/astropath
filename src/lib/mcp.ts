@@ -1,4 +1,9 @@
-import { createPublicUpload, publicUploadInput } from "./public-files";
+import {
+  createPublicUpload,
+  listPublicFiles,
+  listPublicFilesInput,
+  publicUploadInput,
+} from "./public-files";
 import {
   createMcpHandler,
   McpServer,
@@ -319,6 +324,16 @@ export function mcpFor(principal: Principal, context: ChatContext) {
           annotations: { ...write, openWorldHint: true },
         },
         (input) => wrap(() => createPublicUpload(principal, input)),
+      );
+      server.registerTool(
+        "list_public_files",
+        {
+          description:
+            "List public files published in accessible spaces, newest first, with name, size, content type, permanent public_url, uploader and time. Uploads appear once their PUT has completed. Pass next_before as before to page.",
+          inputSchema: listPublicFilesInput,
+          annotations: read,
+        },
+        (input) => wrap(() => listPublicFiles(principal, input)),
       );
       server.registerTool(
         "create_upload",
