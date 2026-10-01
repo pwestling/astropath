@@ -1,8 +1,9 @@
 # Astropath: direction and architecture
 
 Status: the rename, tenant isolation, server-held encryption, and immutable skills
-library are implemented. A per-session agent memory log is also implemented;
-see [memory](memory.md). Presence, device relays,
+library are implemented. A per-session agent memory log ([memory](memory.md))
+and a board of topics with agent @handles and catch-up ([board](board.md)) are
+also implemented; agents are never woken. Presence, device relays,
 and delivery extensions below remain planned. Existing deployments require a tenant migration.
 
 Astropath is a private workspace where people and agents exchange messages and
