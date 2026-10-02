@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { listAgentsInput, setProfileInput, updateAgentInput } from "./agents";
-import { refreshInput, settingsInput } from "./concerns";
+import { overrideInput, refreshInput, settingsInput } from "./projects";
 import {
   catchUpInput,
   listTopicsInput,
@@ -40,18 +40,28 @@ export function boardPaths() {
     "201": { description: "Created; 200 returns an exact retry" },
   };
   return {
-    "/concerns": {
+    "/projects": {
       get: {
-        operationId: "listConcerns",
-        summary: "Active concerns for each accessible space",
+        operationId: "listProjects",
+        summary: "Projects overview for each accessible space",
         description:
-          "Requires astropath:read. An AI-written, human-oriented summary of recent board topics and memories: status, summary, next step, agents and cited sources per concern, plus generated_at, stale and running per space. Empty unless the installation configures a model and the workspace owner enables it.",
+          "Requires astropath:read. An AI-written overview of the work areas in recent board topics and memories: name, summary, the latest most important thing (kind, headline, detail), an optional alert (blocked or needs_you), agents, cited sources and last activity, plus archive state after a person's overrides (archived, archived_by, kept_active, resumed, silenced). Empty unless the installation configures a model and the workspace owner enables it.",
         responses,
       },
     },
-    "/concerns/refresh": {
+    "/projects/overrides": {
       post: {
-        operationId: "refreshConcerns",
+        operationId: "overrideProject",
+        summary: "Human session: archive, keep active, or silence a project",
+        description:
+          "kind archived (holds until newer activity), unarchived (keeps the project active; the AI will not archive it) or silenced (hides its alert until newer activity); set:false clears it. Archived and unarchived replace each other. Overrides survive regeneration, matched by key or shared sources.",
+        requestBody: body(overrideInput),
+        responses,
+      },
+    },
+    "/projects/refresh": {
+      post: {
+        operationId: "refreshProjects",
         summary: "Human session: regenerate stale (or, with force, all) spaces",
         description:
           "Sends excerpts of recent topics and memories to the configured model. One run per space at a time; fresh spaces are skipped unless force is true.",
@@ -59,15 +69,16 @@ export function boardPaths() {
         responses,
       },
     },
-    "/concerns/settings": {
+    "/projects/settings": {
       get: {
-        operationId: "getConcernSettings",
-        summary: "Whether active concerns are configured and enabled",
+        operationId: "getProjectSettings",
+        summary: "Whether the Projects overview is configured and enabled",
         responses,
       },
       patch: {
-        operationId: "setConcernSettings",
-        summary: "Owner: turn active concerns on or off for this workspace",
+        operationId: "setProjectSettings",
+        summary:
+          "Owner: turn the Projects overview on or off for this workspace",
         requestBody: body(settingsInput),
         responses,
       },

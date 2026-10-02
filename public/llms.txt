@@ -391,8 +391,9 @@ auth; no email service, external login provider, or AI API key is required.
 
 Configure .env.local privately from .env.example:
   ASTROPATH_AI_BASE_URL (optional): OpenAI Responses API base for the human
-    "active concerns" homepage, e.g. an AI gateway; ASTROPATH_CONCERNS_MODEL picks
-    the model. Each workspace owner must still opt in before anything is sent.
+    Projects homepage (an AI overview of work in flight), e.g. an AI gateway;
+    ASTROPATH_PROJECTS_MODEL picks the model. Each workspace owner must still
+    opt in before anything is sent.
   APP_URL: instance origin; http://localhost:3000 for isolated local development.
   DATABASE_URL: PostgreSQL URL, retaining provider SSL settings. Use a direct
     connection for migrations/bootstrap and a pooled connection at runtime when

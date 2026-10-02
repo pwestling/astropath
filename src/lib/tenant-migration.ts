@@ -47,7 +47,7 @@ export async function migrateTenancy(tx: Queryable) {
     await readFile(new URL("./board-schema.sql", import.meta.url), "utf8"),
   );
   await tx.query(
-    await readFile(new URL("./concerns-schema.sql", import.meta.url), "utf8"),
+    await readFile(new URL("./projects-schema.sql", import.meta.url), "utf8"),
   );
   const owner = (
     await tx.query<{ id: string; name: string; email: string }>(

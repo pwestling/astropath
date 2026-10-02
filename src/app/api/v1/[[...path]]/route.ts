@@ -33,7 +33,7 @@ import { memory } from "@/lib/memory";
 import { currentGuidance } from "@/lib/guidance";
 import { agents } from "@/lib/agents";
 import { board } from "@/lib/board";
-import { concerns } from "@/lib/concerns";
+import { projects } from "@/lib/projects";
 import {
   createPublicUpload,
   listPublicFiles,
@@ -105,14 +105,16 @@ async function handle(
     else if (route === "public-files/uploads" && method === "POST") {
       result = await createPublicUpload(principal, await jsonBody(request));
       status = 201;
-    } else if (route === "concerns" && method === "GET")
-      result = await concerns.list(principal);
-    else if (route === "concerns/refresh" && method === "POST")
-      result = await concerns.refresh(principal, await jsonBody(request));
-    else if (route === "concerns/settings" && method === "GET")
-      result = await concerns.settings(principal);
-    else if (route === "concerns/settings" && method === "PATCH")
-      result = await concerns.setEnabled(principal, await jsonBody(request));
+    } else if (route === "projects" && method === "GET")
+      result = await projects.list(principal);
+    else if (route === "projects/overrides" && method === "POST")
+      result = await projects.setOverride(principal, await jsonBody(request));
+    else if (route === "projects/refresh" && method === "POST")
+      result = await projects.refresh(principal, await jsonBody(request));
+    else if (route === "projects/settings" && method === "GET")
+      result = await projects.settings(principal);
+    else if (route === "projects/settings" && method === "PATCH")
+      result = await projects.setEnabled(principal, await jsonBody(request));
     else if (route === "board/topics" && method === "GET")
       result = await board.listTopics(principal, {
         space: url.searchParams.get("space") ?? undefined,

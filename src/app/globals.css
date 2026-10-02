@@ -2194,7 +2194,7 @@ small {
   gap: 8px;
 }
 
-/* Active concerns: the human-facing summary of the board and memories. */
+/* Projects overview (class names kept from the first "concerns" version). */
 .concerns-panel {
   display: flex;
   flex-direction: column;
@@ -2339,6 +2339,81 @@ small {
 }
 .concern-source:hover {
   border-color: var(--accent);
+}
+.project-latest {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.project-latest strong {
+  font-weight: 600;
+}
+.latest-kind {
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  white-space: nowrap;
+}
+.latest-kind.blocked {
+  background: #fbe9e4;
+  color: #a54d3c;
+}
+.latest-kind.needs_you {
+  background: var(--gold-soft);
+  color: var(--gold-deep);
+}
+.latest-kind.shipped {
+  background: #e6f2ea;
+  color: #2f6b45;
+}
+.project-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--gold-soft);
+  color: var(--gold-deep);
+  font-size: 13px;
+}
+.project-alert svg {
+  margin-top: 3px;
+}
+.project-alert.blocked {
+  background: #fbe9e4;
+  color: #a54d3c;
+}
+.project-summary {
+  color: var(--muted);
+  font-size: 12px !important;
+}
+.project-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px !important;
+}
+.project-flags span {
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--primary-soft);
+  color: var(--muted);
+}
+.project-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.project-card.is-archived {
+  opacity: 0.85;
 }
 .concerns-optin {
   display: flex;

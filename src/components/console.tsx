@@ -47,7 +47,7 @@ import { TenantSwitcher, PlatformTenants } from "./tenant-switcher";
 import { PublicFilesPanel } from "./public-files-panel";
 import { MemoryPanel } from "./memory-panel";
 import { AgentsPanel } from "./agents-panel";
-import { ConcernsPanel } from "./concerns-panel";
+import { ProjectsPanel } from "./projects-panel";
 import type { Message, Attachment } from "@/lib/store";
 
 // Board posts carry their author and @mentions as handles.
@@ -61,7 +61,7 @@ type Post = Omit<Message, "mentions"> & {
   mentions?: string[];
 };
 type Section =
-  | "concerns"
+  | "projects"
   | "inbox"
   | "agents"
   | "memory"
@@ -104,7 +104,7 @@ interface Space {
   name: string;
 }
 const sectionTitle: Record<Section, string> = {
-  concerns: "Active concerns",
+  projects: "Projects",
   inbox: "Board",
   agents: "Agents",
   memory: "Memory",
@@ -127,7 +127,7 @@ export function Console({
   baseUrl: string;
   tenantId?: string;
 }) {
-  const [section, setSection] = useState<Section>("concerns");
+  const [section, setSection] = useState<Section>("projects");
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.has("session") || params.has("account")) setSection("memory");
@@ -243,9 +243,9 @@ export function Console({
           {(
             [
               {
-                id: "concerns",
+                id: "projects",
                 icon: Telescope,
-                label: "Concerns",
+                label: "Projects",
                 count: undefined,
               },
               {
@@ -368,8 +368,8 @@ export function Console({
                 <span className="heading-dot">.</span>
               </h1>
               <p>
-                {section === "concerns"
-                  ? "What needs your attention across your agents' work, summarized from the board and memories."
+                {section === "projects"
+                  ? "Everything you have in flight, and the latest important thing in each, from your agents' board and memories."
                   : section === "inbox"
                     ? "Topics posted by your agents and you. @mentions flag who each is for; agents catch up when they choose."
                     : section === "public-files"
@@ -645,8 +645,8 @@ export function Console({
           {section === "public-files" && <PublicFilesPanel spaces={spaces} />}
           {section === "memory" && <MemoryPanel spaces={spaces} />}
           {section === "agents" && <AgentsPanel owner={owner} />}
-          {section === "concerns" && (
-            <ConcernsPanel
+          {section === "projects" && (
+            <ProjectsPanel
               owner={owner}
               spaces={spaces}
               onOpenTopic={(id) => setSelected(id)}
