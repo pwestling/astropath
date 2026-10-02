@@ -22,6 +22,7 @@ import {
   LogOut,
   Menu,
   MessagesSquare,
+  Telescope,
   Bot,
   MoreHorizontal,
   Paperclip,
@@ -46,6 +47,7 @@ import { TenantSwitcher, PlatformTenants } from "./tenant-switcher";
 import { PublicFilesPanel } from "./public-files-panel";
 import { MemoryPanel } from "./memory-panel";
 import { AgentsPanel } from "./agents-panel";
+import { ConcernsPanel } from "./concerns-panel";
 import type { Message, Attachment } from "@/lib/store";
 
 // Board posts carry their author and @mentions as handles.
@@ -59,6 +61,7 @@ type Post = Omit<Message, "mentions"> & {
   mentions?: string[];
 };
 type Section =
+  | "concerns"
   | "inbox"
   | "agents"
   | "memory"
@@ -101,6 +104,7 @@ interface Space {
   name: string;
 }
 const sectionTitle: Record<Section, string> = {
+  concerns: "Active concerns",
   inbox: "Board",
   agents: "Agents",
   memory: "Memory",
@@ -123,7 +127,7 @@ export function Console({
   baseUrl: string;
   tenantId?: string;
 }) {
-  const [section, setSection] = useState<Section>("inbox");
+  const [section, setSection] = useState<Section>("concerns");
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.has("session") || params.has("account")) setSection("memory");
@@ -238,6 +242,12 @@ export function Console({
         <nav aria-label="Main navigation">
           {(
             [
+              {
+                id: "concerns",
+                icon: Telescope,
+                label: "Concerns",
+                count: undefined,
+              },
               {
                 id: "inbox",
                 icon: MessagesSquare,
@@ -358,23 +368,25 @@ export function Console({
                 <span className="heading-dot">.</span>
               </h1>
               <p>
-                {section === "inbox"
-                  ? "Topics posted by your agents and you. @mentions flag who each is for; agents catch up when they choose."
-                  : section === "public-files"
-                    ? "Publish a file and share a permanent link anyone can download."
-                    : section === "memory"
-                      ? "What your agents chose to remember, logged session by session."
-                      : section === "agents"
-                        ? "Everyone who can post here, and what each is for."
-                        : section === "connections"
-                          ? "The agents and apps that can reach this workspace, and what they can touch."
-                          : section === "activity"
-                            ? "A record of what arrived and who sent it."
-                            : section === "settings"
-                              ? "Spaces, members, and your account."
-                              : section === "starred"
-                                ? "Topics worth keeping within reach."
-                                : "Topics set aside."}
+                {section === "concerns"
+                  ? "What needs your attention across your agents' work, summarized from the board and memories."
+                  : section === "inbox"
+                    ? "Topics posted by your agents and you. @mentions flag who each is for; agents catch up when they choose."
+                    : section === "public-files"
+                      ? "Publish a file and share a permanent link anyone can download."
+                      : section === "memory"
+                        ? "What your agents chose to remember, logged session by session."
+                        : section === "agents"
+                          ? "Everyone who can post here, and what each is for."
+                          : section === "connections"
+                            ? "The agents and apps that can reach this workspace, and what they can touch."
+                            : section === "activity"
+                              ? "A record of what arrived and who sent it."
+                              : section === "settings"
+                                ? "Spaces, members, and your account."
+                                : section === "starred"
+                                  ? "Topics worth keeping within reach."
+                                  : "Topics set aside."}
               </p>
             </div>
             {listSection ? (
@@ -633,6 +645,19 @@ export function Console({
           {section === "public-files" && <PublicFilesPanel spaces={spaces} />}
           {section === "memory" && <MemoryPanel spaces={spaces} />}
           {section === "agents" && <AgentsPanel owner={owner} />}
+          {section === "concerns" && (
+            <ConcernsPanel
+              owner={owner}
+              spaces={spaces}
+              onOpenTopic={(id) => setSelected(id)}
+              onOpenSession={(sessionId) => {
+                const url = new URL(window.location.href);
+                url.searchParams.set("session", sessionId);
+                window.history.pushState(null, "", url);
+                navigate("memory");
+              }}
+            />
+          )}
           {section === "connections" && (
             <Connections
               baseUrl={baseUrl}

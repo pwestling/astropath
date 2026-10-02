@@ -15,7 +15,8 @@
     "owner:create": "tsx --env-file-if-exists=.env.local scripts/create-owner.ts",
     "format": "prettier --write src scripts tests *.json *.ts README.md",
     "integrations:manifest": "tsx scripts/integration-manifest.ts",
-    "public-files:import": "tsx --env-file-if-exists=.env.local scripts/import-public-files.ts"
+    "public-files:import": "tsx --env-file-if-exists=.env.local scripts/import-public-files.ts",
+    "concerns:refresh": "tsx --env-file-if-exists=.env.local scripts/refresh-concerns.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1133.0",

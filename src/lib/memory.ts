@@ -432,6 +432,28 @@ export class MemoryStore {
 }
 export const memory = new MemoryStore(db);
 
+// Recent memories in one space, newest first, with the writing agent's id,
+// for summaries that run inside a tenant transaction.
+export async function recentMemories(
+  tx: Queryable,
+  space: string,
+  days: number,
+  limit: number,
+) {
+  return (
+    await tx.query<MemoryRow & { agent_id: string | null }>(
+      `SELECT m.*,m.sequence::text AS sequence,c.agent_id FROM ap_memories m
+      LEFT JOIN ap_connections c ON c.id::text=m.principal_id
+      WHERE m.space=$1 AND m.created_at>now()-make_interval(days=>$2::int)
+      ORDER BY m.sequence DESC LIMIT $3`,
+      [space, days, limit],
+    )
+  ).rows.map((row) => ({
+    ...decodeMemory(tx.cipher!, row),
+    agent_id: row.agent_id,
+  }));
+}
+
 // One-time, repeatable copy of the retired topic notes into the log. Each note
 // keeps its author, session, timestamp and retry fingerprint; its topic path
 // and kind become a hint for whatever later organizes the log.

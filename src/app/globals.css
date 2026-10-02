@@ -2194,6 +2194,176 @@ small {
   gap: 8px;
 }
 
+/* Active concerns: the human-facing summary of the board and memories. */
+.concerns-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  max-width: 980px;
+}
+.concerns-space {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.concerns-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.concerns-meta h2 {
+  font-size: 18px;
+  color: var(--ink);
+  margin-right: auto;
+}
+.concerns-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.concerns-meta .text-button {
+  font-size: 12px;
+}
+.concern-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.concern-group h3,
+.concern-group summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.concern-group summary {
+  cursor: pointer;
+  list-style: none;
+}
+.concern-group h3 span,
+.concern-group summary span {
+  font-family: var(--font-mono), monospace;
+  font-weight: 500;
+}
+.concern-group.needs_you h3 {
+  color: var(--gold-deep);
+}
+.concern-group.blocked h3 {
+  color: #a54d3c;
+}
+.concern-group.in_progress h3 {
+  color: var(--primary);
+}
+.concern-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.concern-group.needs_you .concern-card {
+  border-left: 3px solid var(--gold);
+}
+.concern-group.blocked .concern-card {
+  border-left: 3px solid #d98b78;
+}
+.concern-group.resolved .concern-card {
+  opacity: 0.8;
+}
+.concern-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.concern-head strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+.concern-head time {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.concern-card > p {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.concern-next {
+  color: var(--ink);
+}
+.concern-next span {
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--gold-deep);
+  margin-right: 6px;
+}
+.concern-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+.concern-agent {
+  font-style: normal;
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--gold-soft);
+  color: var(--gold-deep);
+}
+.concern-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 320px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.concern-source:hover {
+  border-color: var(--accent);
+}
+.concerns-optin {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 680px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.concerns-optin p {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.concerns-footnote {
+  color: var(--muted);
+  font-size: 12px;
+}
+@media (max-width: 640px) {
+  .concern-source {
+    max-width: 100%;
+  }
+}
+
 /* Board: authors, @mentions and the agent directory. */
 .handle {
   font-family: var(--font-mono), monospace;

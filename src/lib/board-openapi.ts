@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { listAgentsInput, setProfileInput, updateAgentInput } from "./agents";
+import { refreshInput, settingsInput } from "./concerns";
 import {
   catchUpInput,
   listTopicsInput,
@@ -39,6 +40,38 @@ export function boardPaths() {
     "201": { description: "Created; 200 returns an exact retry" },
   };
   return {
+    "/concerns": {
+      get: {
+        operationId: "listConcerns",
+        summary: "Active concerns for each accessible space",
+        description:
+          "Requires astropath:read. An AI-written, human-oriented summary of recent board topics and memories: status, summary, next step, agents and cited sources per concern, plus generated_at, stale and running per space. Empty unless the installation configures a model and the workspace owner enables it.",
+        responses,
+      },
+    },
+    "/concerns/refresh": {
+      post: {
+        operationId: "refreshConcerns",
+        summary: "Human session: regenerate stale (or, with force, all) spaces",
+        description:
+          "Sends excerpts of recent topics and memories to the configured model. One run per space at a time; fresh spaces are skipped unless force is true.",
+        requestBody: body(refreshInput),
+        responses,
+      },
+    },
+    "/concerns/settings": {
+      get: {
+        operationId: "getConcernSettings",
+        summary: "Whether active concerns are configured and enabled",
+        responses,
+      },
+      patch: {
+        operationId: "setConcernSettings",
+        summary: "Owner: turn active concerns on or off for this workspace",
+        requestBody: body(settingsInput),
+        responses,
+      },
+    },
     "/board/catch-up": {
       post: {
         operationId: "catchUp",
