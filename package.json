@@ -16,7 +16,8 @@
     "format": "prettier --write src scripts tests *.json *.ts README.md",
     "integrations:manifest": "tsx scripts/integration-manifest.ts",
     "public-files:import": "tsx --env-file-if-exists=.env.local scripts/import-public-files.ts",
-    "projects:refresh": "tsx --env-file-if-exists=.env.local scripts/refresh-projects.ts"
+    "projects:refresh": "tsx --env-file-if-exists=.env.local scripts/refresh-projects.ts",
+    "keys:rotate": "tsx --env-file-if-exists=.env.local scripts/rotate-master-key.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1133.0",

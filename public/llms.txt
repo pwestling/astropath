@@ -402,6 +402,10 @@ Configure .env.local privately from .env.example:
   ASTROPATH_MASTER_KEY: generate separately with openssl rand -base64 32; keep
     stable and back it up separately from database/object backups. The server
     holds this key; encryption is not end-to-end encryption against the server.
+    To rotate it (e.g. after exposure), set ASTROPATH_PREVIOUS_MASTER_KEY to the old
+    key and ASTROPATH_MASTER_KEY to a new one, restart, then run npm run keys:rotate
+    (dry run), -- --apply and -- --verify; take a backup and remove the previous
+    key. Details: https://github.com/pwestling/astropath/blob/main/docs/master-key-rotation.md
   OWNER_EMAIL: initial platform administrator's email.
   OWNER_NAME: optional initial display name, default Owner.
   OWNER_PASSWORD: bootstrap only, at least 12 characters; remove after creation.

@@ -30,22 +30,47 @@ export function open(key: Buffer, context: string, ciphertext: string): Buffer {
   return Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]);
 }
 
-export function masterKey() {
-  const encoded = process.env.ASTROPATH_MASTER_KEY || "";
+function decodeKey(name: string, encoded: string) {
   const key = Buffer.from(encoded, "base64");
   if (key.length !== 32 || key.toString("base64") !== encoded)
-    throw new Error(
-      "ASTROPATH_MASTER_KEY must be a base64-encoded 32-byte key",
-    );
+    throw new Error(`${name} must be a base64-encoded 32-byte key`);
   return key;
 }
 
+export function masterKey() {
+  return decodeKey(
+    "ASTROPATH_MASTER_KEY",
+    process.env.ASTROPATH_MASTER_KEY || "",
+  );
+}
+
+// Set only while rotating the master key (see docs/master-key-rotation.md):
+// tenant keys not yet re-wrapped still open with the previous key.
+export function previousMasterKey(): Buffer | null {
+  const encoded = process.env.ASTROPATH_PREVIOUS_MASTER_KEY;
+  return encoded ? decodeKey("ASTROPATH_PREVIOUS_MASTER_KEY", encoded) : null;
+}
+
+export function wrapTenantKey(
+  tenantId: string,
+  key: Uint8Array,
+  master: Buffer = masterKey(),
+) {
+  return seal(master, `tenant-key:${tenantId}`, key);
+}
+
 export function newTenantKey(tenantId: string) {
-  return seal(masterKey(), `tenant-key:${tenantId}`, randomBytes(32));
+  return wrapTenantKey(tenantId, randomBytes(32));
 }
 
 export function unwrapTenantKey(tenantId: string, wrapped: string) {
-  return open(masterKey(), `tenant-key:${tenantId}`, wrapped);
+  try {
+    return open(masterKey(), `tenant-key:${tenantId}`, wrapped);
+  } catch (error) {
+    const previous = previousMasterKey();
+    if (!previous) throw error;
+    return open(previous, `tenant-key:${tenantId}`, wrapped);
+  }
 }
 
 export interface ContentCipher {
