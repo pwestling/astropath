@@ -11,7 +11,7 @@ import { spaceSlug } from "./validation";
 // The Projects homepage: an AI-written overview of a space's work areas from
 // recent board topics and memories. ASTROPATH_AI_BASE_URL is an OpenAI
 // Responses API base, e.g. http://127.0.0.1:4340/chatgpt/v1 through
-// aigateway; without it the feature is off.
+// cogitator (formerly aigateway); without it the feature is off.
 export function projectsConfig() {
   const base = process.env.ASTROPATH_AI_BASE_URL?.replace(/\/+$/, "");
   return {

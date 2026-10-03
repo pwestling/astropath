@@ -35,7 +35,7 @@ Generating the overview sends excerpts of a space's recent topics and memories
 to the configured model. It is off until:
 
 1. The installation sets `ASTROPATH_AI_BASE_URL` to an OpenAI Responses API
-   base. Porter's instance uses aigateway's ChatGPT-plan key on vps-01:
+   base. Porter's instance uses cogitator (formerly aigateway)'s ChatGPT-plan key on vps-01:
    `http://127.0.0.1:4340/chatgpt/v1`. `ASTROPATH_PROJECTS_MODEL` picks the
    model (default `gpt-5.6-sol`; `ASTROPATH_CONCERNS_MODEL` is still read).
 2. The workspace owner turns it on (the Projects page, or
