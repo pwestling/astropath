@@ -143,15 +143,19 @@ fi
 ln -s "$target" /srv/astropath/current.next
 mv -Tf /srv/astropath/current.next /srv/astropath/current
 healthy=0
-if systemctl restart astropath.service; then
+# A slow stop (open long-polls hit TimeoutStopSec and are killed) makes the
+# restart job report failure even though the new process starts, so judge
+# the result by health and by which release the running process serves.
+systemctl restart astropath.service || true
 for attempt in $(seq 1 30); do
-  if curl --fail --silent http://127.0.0.1:4310/api/health >/dev/null; then
+  pid="$(systemctl show astropath.service -p ExecMainPID --value)"
+  if [[ "$pid" != 0 && "$(readlink -f "/proc/$pid/cwd" 2>/dev/null)" == "$target" ]] &&
+    curl --fail --silent http://127.0.0.1:4310/api/health >/dev/null; then
     healthy=1
     break
   fi
   sleep 1
 done
-fi
 if [[ "$healthy" != 1 ]]; then
   if [[ "$mode" != --activate-migrated && -n "$previous" && -d "$previous" ]]; then
     ln -s "$previous" /srv/astropath/current.next
