@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   newQuickJSWASMModuleFromVariant,
+  newVariant,
   type QuickJSContext,
   type QuickJSHandle,
   type QuickJSRuntime,
   type QuickJSWASMModule,
 } from "quickjs-emscripten-core";
-import variant from "@jitl/quickjs-wasmfile-release-sync";
+import releaseVariant from "@jitl/quickjs-wasmfile-release-sync";
 import { db, forPrincipal, type Database } from "../db";
 import { requireScope, requireSpace, type Principal } from "../policy";
 import { canonicalJson, sha256 } from "./contracts";
@@ -31,8 +32,12 @@ export const LIMITS = {
   sourceBytes: 32 * 1024,
   wallMs: 30000,
   cpuMs: 1000,
-  memoryBytes: 128 * 1024 * 1024,
+  // Shares the server process's memory budget, so kept well under it.
+  memoryBytes: 64 * 1024 * 1024,
   stackBytes: 1024 * 1024,
+  // The whole WebAssembly heap, shared by concurrent executions. QuickJS's
+  // per-runtime limit counts live bytes; this also bounds fragmentation.
+  wasmPages: 3072, // 192 MiB
   calls: 50,
   concurrent: 8,
   resultBytes: 64 * 1024,
@@ -98,9 +103,18 @@ export interface ExecutionResult {
   replayed: boolean;
 }
 
-// A fresh WebAssembly instance per execution: nothing one program does to
-// its memory can reach the next, and a fatal abort is contained.
-const engine = () => newQuickJSWASMModuleFromVariant(variant);
+// One WebAssembly instance per process; each execution gets its own QuickJS
+// runtime (separate heap, limits and garbage collector). If the instance ever
+// aborts, it is discarded and the next execution loads a fresh one.
+let quickjs: Promise<QuickJSWASMModule> | null = null;
+const variant = newVariant(releaseVariant, {
+  wasmMemory: async () =>
+    new WebAssembly.Memory({ initial: 256, maximum: LIMITS.wasmPages }),
+});
+const engine = () => (quickjs ??= newQuickJSWASMModuleFromVariant(variant));
+const discardEngine = () => {
+  quickjs = null;
+};
 
 function effectsOf(calls: CallRecord[]): ExecutionResult["effects"] {
   const counts: Record<string, number> = {};
@@ -341,7 +355,8 @@ export class Sandbox {
       this.context.dispose();
       this.runtime.dispose();
     } catch {
-      // The instance is discarded either way; never fail the execution here.
+      // A failed teardown means the WebAssembly instance may be corrupt.
+      discardEngine();
     }
   }
 }
@@ -771,7 +786,7 @@ export async function execute(
       error = {
         code: memory ? "EXECUTION_LIMIT" : "PROGRAM_ERROR",
         message: memory
-          ? "The program ran out of memory (128 MiB)."
+          ? "The program ran out of memory (64 MiB)."
           : outcome.message,
         effect_state: "unknown",
         retry_advice: "reconcile",

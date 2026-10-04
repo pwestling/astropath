@@ -946,6 +946,7 @@ describe("execute", () => {
       `async () => { const a = []; for (;;) a.push(new Array(1e6).fill(1)); }`,
     );
     expect(memory.body.error.code).toBe("EXECUTION_LIMIT");
+    expect(memory.body.error.message).toMatch(/memory/);
     const big = await read(`async () => "x".repeat(70000)`);
     expect(big.body.error.message).toMatch(/64 KiB/);
     const syntax = await read("async () => {");

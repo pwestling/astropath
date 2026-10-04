@@ -399,7 +399,7 @@ reconnecting, or refreshing the tool list.
   execution_key (identifies this exact program run; repeating it returns the
   same execution and never re-runs it), and an idempotency_key per call. The
   sandbox has no network, modules, timers or filesystem; limits are 32 KiB of
-  source, 30 seconds, 1 second of CPU, 128 MiB, 50 calls, 8 concurrent and a
+  source, 30 seconds, 1 second of CPU, 64 MiB, 50 calls, 8 concurrent and a
   64 KiB result. The response has status, result, logs, a ledger of every
   call with its receipt, and effects (has_committed_effects,
   has_unsettled_calls). Execution is not a transaction: a failure after a

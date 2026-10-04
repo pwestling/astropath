@@ -228,7 +228,7 @@ keys and the tables change without notice. Instead an app:
 ```
 
 **The program.** It is an async function expression, run in QuickJS compiled
-to WebAssembly. Each execution gets a fresh WebAssembly instance.
+to WebAssembly. Each execution gets its own QuickJS runtime (a separate heap with its own memory limit) inside one shared WebAssembly instance, which is replaced if it ever aborts.
 
 **What the program can reach:**
 - `api`, a frozen object holding only the selected operations;
@@ -243,7 +243,7 @@ idempotency and receipts apply per call.
 - Read mode refuses to select operations that change state.
 - Write mode needs an `execution_key`. Repeating the same key and program returns the recorded execution and never re-runs it. A changed program, operation set, catalog, space or mode under the same key is `IDEMPOTENCY_CONFLICT`.
 
-**Limits:** 32 KiB of source, 30 seconds, 1 second of CPU, 128 MiB, 50 calls,
+**Limits:** 32 KiB of source, 30 seconds, 1 second of CPU, 64 MiB, 50 calls,
 8 concurrent calls, and a 64 KiB result.
 
 **Failures:**
