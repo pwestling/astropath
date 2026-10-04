@@ -1,162 +1,207 @@
 # Tool platform: implementation plan
 
-Status: plan for review, 2026-10-03. Nothing here is built yet.
+**Status:** plan for review, 2026-10-03 (revision 2). Nothing here is built yet.
 
-Sources:
+**Sources:**
+- **The spec:** "Astropath Tool Platform and App Integration Specification — Proposed v1", board topic `19371e3e`.
+- **The STC spec:** `cb65dd4a`, revised in reply `5f816d31`. STC is the first real app.
+- **The Arbites spec:** `b983bf72`, which supplies approval behind `approval_required`.
+- **STC's plan:** `../stc/docs/implementation-plan.md`, which treats this registry and dispatcher as STC's prerequisite.
 
-- "Astropath Tool Platform and App Integration Specification — Proposed v1" (board topic `19371e3e`), called **the spec** below.
-- The STC spec (`cb65dd4a`, revised reply `5f816d31`), which makes STC the first real app.
-- The Arbites spec (`b983bf72`), which supplies approval behind `approval_required`.
-- `../stc/docs/implementation-plan.md`, which already treats this registry and dispatcher as STC's prerequisite.
+## The model
 
-## What we are building
+Astropath is a **front door and catalog** for tools that other apps serve.
 
-Agents keep one Astropath connection. That connection gains three fixed tools: `discover`, `invoke` and `execute`. Apps register versioned operations in a registry. Publishing a new tool means activating a new operation. Connected agents then see it through `discover` and call it through `invoke`, with no new MCP tool, no reconnect and no client restart. Apps' UIs call the same operations over HTTP.
+- **Apps own their tools and data.** Each app is its own service with its own database and its own deploy. Astropath does not host app code or app tables.
+- **Apps register themselves when they deploy.** An app's deploy step sends its manifest (operations, schemas, routes) to Astropath. Astropath validates it and publishes a new catalog. **Astropath itself does not redeploy.**
+- **Agents keep one connection.** That connection gains three fixed tools:
+  - `discover` searches the catalog;
+  - `invoke` forwards one call to the owning app;
+  - `execute` runs a short script that chains calls.
+  New tools show up on the next `discover`, with no new MCP tool, reconnect or restart.
+- **Astropath keeps the shared parts:**
+  - authentication and the grant check;
+  - a durable log of every call, with idempotency;
+  - forwarding as the calling agent;
+  - turning a downstream timeout into "outcome unknown" instead of a blind retry.
+- **Astropath's own features are built-in apps.** Memory, the board, files and skills register as `core.*` operations served in-process. The existing MCP tools keep working unchanged.
 
 ## Where the spec meets the current code
 
 | Spec assumes | Astropath today | Plan |
 | --- | --- | --- |
-| Python backend and handlers | Next.js 16 and TypeScript, Zod 4 schemas, `pg`, PGlite tests | Write handlers in TypeScript. Generate JSON Schema from the Zod source with `z.toJSONSchema`. The STC plan already agrees. |
-| `astropath:read` and `astropath:write` scopes | The same two scopes, stored in `ap_connections.scopes text[]`, with optional `spaces text[]` | Reuse `scopes` for app permissions such as `stc:launch`. The two existing scopes map only to `core.*` operations and never cover new apps. |
-| Tenant and space | Tenants with RLS and per-tenant AES keys; spaces | Invocations, jobs and outbox rows are tenant-scoped under RLS. Stored arguments and results use the tenant key, as messages do. |
-| Idempotency | `ap_messages` already enforces principal-scoped keys with a request hash and a conflict on mismatch | Generalise this into one invocation ledger. |
-| A registry of installable packages | ~33 hand-registered MCP tools in `src/lib/mcp.ts` | Add a registry beside them. The legacy tools keep working. |
-| Workers and an outbox | None. Projects generation runs inline. | Add a Postgres job and outbox table, plus a worker process from the same release. |
+| Python backend and handlers | Next.js 16 / TypeScript, Zod 4, `pg`, PGlite tests | The dispatcher, adapter and core handlers are TypeScript. Remote apps can use any language. |
+| Scopes `astropath:read`/`write` | The same two, in `ap_connections.scopes text[]`, with optional `spaces text[]` | They keep covering `core.*`. App access is decided by grant policy (below), not by these scopes. |
+| Tenant and space | Tenants with RLS and per-tenant AES keys; spaces | Invocation, app and catalog rows are tenant-scoped under RLS. Stored arguments and results are encrypted with the tenant key. |
+| Idempotency | `ap_messages` enforces principal-scoped keys, with a request hash and conflict | Generalise this into one invocation log, and pass the key downstream. |
+| Change notifications | An `ap_events` table and an SSE stream exist | Expose them as a durable, cursor-based change feed for indexing apps. |
 
-## Deliberate simplifications (flag if you disagree)
+## How an app joins
 
-1. **Apps are code, and installing one is a deploy.** The registry is built at boot from app modules in this repo, such as `src/apps/<id>/`. "Prepare" is the existing migrate step and "activate" is the release switch.
-   - This meets the spec's rule that registering metadata never runs code.
-   - The deviation is that there is no runtime upload of app packages and no admin `POST /admin/v1/apps/...` API in v1.
-   - Remote apps are the exception: they register a binding to a service that has its own deploy.
-2. **Catalog revision is a content hash of the active contract set.** Each new revision is persisted in `ap_catalog_snapshots` when the server boots, so receipts can cite it.
-   - An invocation against an older revision succeeds if that exact `operation@version` still exists with the same contract hash. Otherwise it fails with `CATALOG_EXPIRED`.
-   - Old versions are retained by leaving them defined in code, not by serving 30-day snapshots. In practice this gives the same guarantees: no silent substitution, and explicit expiry.
-3. **Discovery search runs in memory.** It uses exact names, aliases and token ranking over the in-memory registry. That is enough for hundreds of operations. Postgres full-text search can come later.
-4. **`execute` ships as a fixed schema that returns `NOT_AVAILABLE`.** The spec permits this. The sandbox is phase 5.
-5. **One owner per tenant.** Grants are per connection, plus an optional owner auto-grant per app. There is no multi-party policy engine; Arbites adds approvals later.
+### One-time setup (you, in the Console)
+
+1. Create the app and choose its namespace (`stc`).
+2. Set its **origin**, the base URL Astropath forwards to. Only the owner sets this; a manifest cannot. That way a leaked publisher key cannot point tools somewhere else.
+3. Choose its **grant policy** (see below).
+4. Astropath issues a **publisher key**. It can publish manifests for that namespace and nothing else, and goes into the app's deploy secrets.
+
+### Every deploy
+
+1. The deploy script calls `POST /api/platform/v1/apps/{app}/releases`, with the manifest and the publisher key.
+2. Astropath validates the manifest:
+   - names, and reserved words (`then`, `constructor`, `prototype`, `__proto__`, and the `platform` namespace);
+   - unique `operation@version`;
+   - self-contained JSON Schema 2020-12, with no remote `$ref`;
+   - at most 32 KiB per contract;
+   - examples validate against their input schemas;
+   - every route is a relative path under the fixed origin.
+3. Astropath probes the app's health endpoint, plus a manifest-digest endpoint that confirms the deployed code serves the release being registered.
+4. Activation is atomic and uses an expected-current-catalog precondition, so two concurrent deploys can't overwrite each other.
+5. Re-sending the same release with the same content does nothing. Different content under the same release ID is rejected.
+
+### Versions
+
+- **Old versions are the app's responsibility.** It serves versioned routes. To retire a version it first marks it `deprecated` (with a date) in a manifest, then omits it.
+- **Each catalog revision is a hash of the active contract set.** An invocation that names an older revision succeeds if that exact `operation@version` is still active with the same contract hash. Otherwise it gets `CATALOG_EXPIRED` or `OPERATION_RETIRED` and never falls forward to a newer version.
+- **The owner can disable an app or an operation instantly** from the Console, across all revisions.
+
+## Grants: auto by default
+
+You want more automatic than explicit, so the default for apps you set up is **auto-grant**:
+
+- **App policies.** Each app has one of:
+  - `auto`, the default: every connection that has `astropath:write` gets the app's read and write operations. Connections with only `astropath:read` get its read operations.
+  - `explicit`: nothing is granted until it is toggled per connection.
+  - `disabled`.
+- **External effects.** Operations whose effect is `external` (outside the app's own data: sending email, pushing code, spending money) follow the same policy by default. An app can mark operations `sensitive`, which routes them to explicit grants, and later to Arbites approval.
+- **Per-connection opt-outs.** Any connection can be excluded from a given app, for example a low-trust agent that gets only `core.*`.
+- **Why this is reasonable.** A publisher key can only add tools that route to its own fixed origin. A compromised publisher therefore exposes nothing beyond what that app could already do. The risk is bounded by the app, not by Astropath.
+- **The Console Apps view** shows each app, its operations and policy, the per-connection exceptions, and recent calls.
+
+## Calls and identity
+
+### Dispatcher
+
+`dispatch(principal, request)` runs these steps in order:
+
+1. Resolve the exact binding.
+2. Check the grant.
+3. Validate strictly: no coercion or defaults; reject unknown keys, duplicate JSON keys and non-finite numbers.
+4. Hash the arguments as SHA-256 of their JCS canonical form.
+5. Reserve the invocation in its own committed transaction.
+6. Forward the call, or run a local `core.*` handler.
+7. Validate the output.
+8. Finalise the receipt.
+
+Errors use the spec's §4.4 envelope: a `code`, plus `effect_state` and `retry_advice`.
+
+### Forwarding
+
+- **Delegated token.** Each forwarded call carries a signed, audience-bound token valid for at most 60 seconds. Its claims cover:
+  - who and where: principal, tenant, space and connection;
+  - what: the operation, its version and the invocation ID;
+  - which request: the argument hash and the idempotency digest.
+- **Signing.** The token is signed with Ed25519, using a key in SOPS. Apps verify it against `GET /.well-known/jwks.json`.
+- **Idempotency.** The idempotency key travels downstream so the app can deduplicate.
+- **Safety.** The adapter never forwards caller credentials, refuses redirects and origin changes, and enforces the timeout. A timeout after dispatch yields `unknown`, which needs reconciling with the same key; it is never retried with a fresh key.
+
+### Receipts
+
+- `platform.get_receipt` and `GET /api/v1/invocations/{id}` return a call's recorded outcome.
+- Async app operations return `accepted` with the app's own job handle. The app owns its job lifecycle; Astropath records the handle.
+
+### Agent surface
+
+- **MCP:** `discover`, `invoke` and `execute` return `structuredContent` plus a short text form, with `isError` on failure.
+- **HTTP:** `POST /api/v1/discover`, `POST /api/v1/invoke` and `POST /api/v1/execute`.
+- **`execute`:** ships first with its fixed schema, returning `NOT_AVAILABLE`.
+
+## Apps reading Astropath data
+
+Apps do **not** read Astropath's database directly:
+- Message, memory and profile content is encrypted with per-tenant keys. A direct reader would see ciphertext unless it held the master key.
+- RLS and frequent migrations would make apps break on internal changes.
+
+The spec agrees: cross-app reads go through published operations or versioned read contracts. Apps that index or reference Astropath data use three things instead:
+
+- **A service connection.** An app gets its own read (or read and write) connection and calls `core.*` operations, the same API agents use. Results come back decrypted and checked against permissions.
+- **A change feed.** `GET /api/platform/v1/changes?after=<cursor>` returns a durable, resumable stream of created and updated board topics, replies, memories and files, built on `ap_events`. An indexer stores its cursor and catches up after downtime. The feed carries IDs and change kinds, with content included if the connection may read it.
+- **References by ID.** Apps store Astropath IDs (topic, memory, session, file) and fetch content when they need it.
+
+When an app acts on behalf of a calling agent, it can call back into `core.*` with that call's delegated token. The callback then runs with the agent's permissions, not with the app's broader service connection.
 
 ## Phases
 
-### Phase 1: registry, dispatcher and receipts (the core)
+### Phase 1: catalog, dispatcher and forwarding
 
-**`src/platform/`**
-
-- `defineOperation({ name, version, summary, input, output, effect, execution, permissions, idempotency, examples, handler })`, where `input` and `output` are Zod schemas.
-- `defineApp({ id, release, description, permissions, operations, ui })`.
-
-**Registry validation at boot.** The server refuses to start, and tests fail, on any of:
-
-- a bad name pattern, or a reserved word (`then`, `constructor`, `prototype`, `__proto__`, or the `platform` namespace);
-- duplicate `operation@version` pairs;
-- a schema that does not convert to self-contained JSON Schema;
-- a contract over 32 KiB;
-- an example that does not validate;
-- a namespace not owned by its app.
-
-**Dispatcher (`dispatch(principal, request)`)** steps:
-
-1. Resolve the exact binding.
-2. Check the grant: the connection's scopes must include each `required_permission`, and the space must be allowed.
-3. Validate strictly: no coercion, no defaults, unknown keys rejected, duplicate JSON keys and non-finite numbers rejected.
-4. Hash the arguments as SHA-256 of their JCS canonical form.
-5. Reserve the invocation in its own committed transaction.
-6. Run the handler in a transaction that also finalises the receipt, validating output before commit.
-7. Shape the result into the receipt and error envelope from spec §4.4: `effect_state` and `retry_advice`.
-
-**New tables:**
-
+**Tables**
+- `ap_apps`: namespace, origin, grant policy, and the publisher key hash.
+- `ap_app_releases`
 - `ap_catalog_snapshots`
-- `ap_invocations`, unique on (tenant, principal, space, operation, version, idempotency_key), with the args hash, status, attempt fence, and encrypted args and result
+- `ap_connection_app_exclusions`
+- `ap_invocations`: a unique key on (tenant, principal, space, operation, version, idempotency_key), plus the argument hash, status, attempt fence, and encrypted arguments and result.
 
-**Operations and routes:**
+**Endpoints and routes**
+- The publisher endpoint, the JWKS route and the remote adapter.
+- The `core.*` operations, served in-process by the existing store functions.
+- MCP and HTTP `discover`, `invoke` and `execute`, with `execute` returning `NOT_AVAILABLE`.
 
-- `platform.get_receipt`.
-- HTTP `POST /api/v1/discover`, `/invoke` and `/execute`, and `GET /api/v1/invocations/{id}`.
-- MCP `discover`, `invoke` and `execute`, returning `structuredContent` plus a short text form, with `isError` on failure.
+**Console:** an Apps view with setup, policy, exclusions and recent calls.
 
-**Core operations.** Register `core.*` operations (memory, board, files, skills) whose handlers call the same store functions the legacy tools use. That gives equivalence without a rewrite. Legacy tools can move onto `dispatch()` later.
+**Agent docs:** update `llms.txt`, the guidance template and `GUIDANCE_VERSION`.
 
-**Console: Apps view.**
+**Test app:** a small `echo` service in `examples/` that registers on start, used for the end-to-end tests.
 
-- Installed apps and their operations, with the JSON Schema shown.
-- Per-connection grant toggles, which edit `ap_connections.scopes`.
-- Recent receipts.
+**Acceptance.** These are tests from the spec's §14:
+- While a client stays connected, the example app deploys a new operation, which is discovered and invoked with unchanged outer schemas (#1).
+- An older catalog is honoured or fails explicitly (#3, #4).
+- Hidden operations reveal nothing (#6).
+- Replay, conflict and lost-response cases pass (#9, #10, #22).
+- A remote timeout reports `unknown` (#11).
+- A wrong-audience or expired token is rejected (#19).
+- A token replayed with changed arguments is rejected (#24).
+- The legacy tools still work (#20).
 
-**Housekeeping:** update `llms.txt` and the guidance template, and bump `GUIDANCE_VERSION` so agents learn to call `discover`.
+### Phase 2: change feed and service connections
 
-**Acceptance (from spec §14):**
+- The cursor-based change feed and service connections for apps.
+- The callback path with delegated tokens.
+- A small indexing app to exercise it, for example search over topics and memories.
 
-- Add an operation in a deploy while a client stays connected; it is discovered and invoked with the outer schemas unchanged (#1).
-- An old catalog is honoured or fails explicitly (#3, #4).
-- A hidden operation reveals nothing (#6).
-- The idempotency replay, conflict and lost-response cases pass (#9, #10, #22).
-- The legacy tools still pass (#20).
+### Phase 3: STC as the first real app
 
-**Size:** the bulk of the work, about 1.5–2k lines including tests.
+STC's own plan covers its database, the forgeworld host, `stcd` and the Claude launcher. On the Astropath side:
 
-### Phase 2: jobs, outbox and a worker
+- STC registers the nine `stc.*` operations on deploy.
+- Launch operations are async and return STC job handles.
+- **Bounded session grants:** STC asks Astropath, through a `platform.mint_session_connection` operation, for a connection for a spawned Claude session. That connection's scopes are the intersection of the caller's and the project's, and it is minted by Astropath, never by `stcd`.
+- **End-to-end acceptance**, STC's check #13: a connected agent runs `discover`, then `stc.create_project` with an `initial_prompt`, then `stc.get_session`.
 
-- Tables `ap_jobs` (lease plus a monotonic fencing generation) and `ap_outbox`.
-- Async operations return `accepted` with a job handle. Add `platform.get_job` and `platform.cancel_job`.
-- Add an `astropath-worker` systemd unit, in the vps repo, that runs `node worker.js` from the current release.
-  - It claims jobs with `FOR UPDATE SKIP LOCKED`, renews leases, re-authorises before effects and delivers outbox events.
-- Move Projects generation onto it, as a real first user that is not on STC's critical path.
-- Acceptance: #8, #17 and #23.
+### Phase 4: `execute`
 
-### Phase 3: remote apps and delegated tokens (what STC needs for `stcd`)
+- **Runtime:** QuickJS compiled to WASM (`quickjs-emscripten`), in a separate child process with rlimit and systemd memory and CPU caps. It has no host modules and no network.
+- **Calls:** `api.*` calls return over IPC to `dispatch()`, so every inner call is a normal invocation with its own receipt.
+- **Tables:** `ap_executions` and `ap_execution_calls`, enforcing the spec's §5.3 budgets.
+- **No Node `vm`:** it is not a security boundary.
+- **Alternative runtime:** Cloudflare Code Mode isolates better, but adds an external hop and a dependency.
+- **Acceptance:** tests #12, #13, #14 and #21.
 
-- Service bindings live in deployment config (NixOS env or SOPS), never in a manifest: the service ID, origin, route templates and timeouts.
-- Signed, audience-bound delegated tokens valid for at most 60 s, with the claims from spec §8 including the args hash and idempotency digest. Use an Ed25519 signing key in SOPS and publish a JWKS route for backends.
-- The adapter refuses redirects and origin changes and never forwards caller credentials. It maps a downstream timeout to `unknown`, plus reconciliation.
-- Acceptance: #11, #19 and #24.
+### Later
 
-### Phase 4: STC as the first app
+- **Arbites as the approval provider.** For `sensitive` operations, the dispatcher returns `APPROVAL_REQUIRED` with an `approval_request_id`, and the same invocation resumes after approval.
+- **Schema-only record apps.** Shelved; see the board topic "Idea for later: schema-only record apps".
 
-STC's own plan covers the forgeworld host, `stcd` and the Claude launcher. On the Astropath side:
+## Open decisions
 
-- An `src/apps/stc/` module with project, workspace and session tables and the nine `stc.*` operations.
-  - The launch and stop operations are async jobs that the worker hands to `stcd` through the phase-3 adapter.
-- A small STC view in the Console.
-- Bounded session grants for spawned Claude sessions: a new connection whose scopes are the intersection of the caller's and the project's scope. These are minted by the dispatcher, never by `stcd`.
-- The end-to-end acceptance is STC's #13: a connected agent runs discover, then `stc.create_project` with `initial_prompt`, then `stc.get_session`.
-
-### Phase 5: `execute`
-
-- Use QuickJS compiled to WASM (`quickjs-emscripten`) in a separate child process with an rlimit and systemd memory and CPU caps.
-- It gets no host modules and no network. `api.*` callbacks go back over IPC to `dispatch()`, so every inner call is a normal invocation.
-- An execution ledger lives in `ap_executions` and `ap_execution_calls`, enforcing the spec §5.3 budgets.
-- Node `vm` is not used; the spec is right that it is not a security boundary.
-- Cloudflare Code Mode is the alternative. It isolates better, but adds an external hop and an external dependency.
-- Acceptance: #12, #13, #14 and #21.
-
-### Phase 6: schema-only "record apps", so agents can publish tools themselves
-
-This is the only path where publishing a tool needs no deploy, which is likely the long-run "share new tools to the agent net" experience.
-
-- An agent submits a manifest of record collections: a JSON Schema per collection, plus permissions and indexes.
-- It lands as a pending app. You approve it in the Console.
-- The platform then generates `app.create_x`, `get_x`, `list_x`, `update_x` (optimistic `expected_version`) and `archive_x` over a shared, RLS-protected `ap_app_records(app, collection, id, version, data jsonb)` table.
-- No code runs. Grants are still explicit. Anything with real behaviour (side effects, state machines) graduates to a code app.
-
-### Later, in parallel
-
-- **Arbites approval provider:** the dispatcher returns `APPROVAL_REQUIRED` with `approval_request_id`, and the same invocation resumes after approval.
-- Moving the skills UI and other features into app modules (spec phase 4).
-
-## Decisions I need from you
-
-1. **First app to prove the loop.** STC is the stated first app, but it also needs the forgeworld host, `stcd` and the Claude adapter proof. I'd prove phases 1–2 with a tiny local app first: for example a `notes` record app, or a genuinely useful small tool you name. STC then lands on a working platform rather than co-developing with it.
-2. **Who can publish tools.** Option A: only you, via code in this repo (phases 1–4). Option B: agents can also propose schema-only record apps for your one-click approval (phase 6). Phase 6 is cheap once phase 1 exists.
-3. **Grant default for new apps.** Should a newly deployed app's operations be granted to existing connections automatically (owner auto-grant per app), or only by toggling them in the Console? The spec defaults to explicit grants.
-4. **`execute` runtime.** Local QuickJS is my default; Cloudflare is the alternative.
+1. **First app to prove the loop.** I'd use the `echo` example for the tests, then STC. Name something smaller and genuinely useful if you have one.
+2. **Policy for external effects.** Should `external` operations under `auto` stay auto, or always need explicit grants? Under this plan they stay auto unless the app marks them `sensitive`.
+3. **Runtime for `execute`.** Local QuickJS is my default.
 
 ## Not in scope
 
 - A third-party marketplace.
-- Running untrusted code in-process.
+- Running app code inside Astropath.
+- Direct database access for apps.
 - Semantic search.
 - Distributed transactions.
-- A generic UI generated from every schema.
 - Retiring the legacy MCP tools before clients are seen to have migrated.
