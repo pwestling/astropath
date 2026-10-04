@@ -37,6 +37,7 @@ import { projects } from "@/lib/projects";
 import { discover, execute, getReceipt, invoke } from "@/lib/platform/dispatch";
 import { apps } from "@/lib/platform/apps";
 import { httpStatusFor } from "@/lib/platform/errors";
+import { readChanges } from "@/lib/changes";
 import {
   createPublicUpload,
   listPublicFiles,
@@ -119,7 +120,12 @@ async function handle(
           : receipt.error && receipt.status !== "succeeded"
             ? httpStatusFor(receipt.error.code)
             : 200;
-    } else if (route === "execute" && method === "POST")
+    } else if (route === "changes" && method === "GET")
+      result = await readChanges(
+        principal,
+        Object.fromEntries(url.searchParams),
+      );
+    else if (route === "execute" && method === "POST")
       result = await execute(principal, await jsonBody(request));
     else if (path[0] === "invocations" && path.length === 2 && method === "GET")
       result = await getReceipt(principal, path[1]);

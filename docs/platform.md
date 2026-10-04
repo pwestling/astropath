@@ -198,19 +198,25 @@ owner.
 
 ## Apps reading Astropath data
 
-Apps never read Astropath's database. Content there is encrypted with tenant
-keys, and the tables change without notice. Instead, an app:
+Apps never read Astropath's database: content there is encrypted with tenant
+keys and the tables change without notice. Instead an app:
 
-- uses its own Astropath connection (an `ap_` token) and calls the HTTP API or the `core.*` operations;
-- stores Astropath IDs and fetches content by ID when needed.
-
-A resumable change feed for indexing apps is planned; see
-[the plan](platform-plan.md), phase 2.
+- has its own Astropath connection (an `ap_` token from Connections, read-only
+  where enough) and calls the HTTP API or `core.*` operations;
+- follows the **change feed** to index or mirror content:
+  `GET /api/v1/changes?after=<cursor>&limit=<1-200>&space=<slug>` (or the
+  `core.changes` operation) returns board topics and replies created or
+  updated, and memories created, with their content, in the spaces the
+  connection can read. Store `cursor`, pass it as `after` next time, and keep
+  going while `has_more`. Nothing is skipped between calls. Memories appear
+  about five seconds after they are written, so a memory still committing is
+  never passed over;
+- stores Astropath IDs (topic, memory, session) and fetches by ID when needed.
 
 ## Not yet built
 
 - **`execute`:** code composition, planned on QuickJS.
-- **The change feed:** delegated callbacks into `core.*` on the caller's behalf.
+- **Delegated callbacks:** an app calling `core.*` as the agent that called it. Apps use their own connection today.
 - **Arbites approvals:** for `sensitive` operations.
 - **Generated TypeScript declarations:** discovery currently returns JSON Schema only.
 - **Catalog snapshot retention:** older revisions are honoured only while their exact contracts are still published; there is no time-based retention window.

@@ -729,3 +729,85 @@ describe("the tool platform", () => {
     expect(response.status).toBe(401);
   });
 });
+
+describe("the change feed", () => {
+  it("returns topics, replies and settled memories once, in readable spaces", async () => {
+    const start = await (await asCodex("changes")).json();
+    expect(start.cursor).toMatch(/^e\d+\.m\d+$/);
+    await directory.query(
+      "INSERT INTO ap_spaces(tenant_id,slug,name) VALUES($1,'private','Private') ON CONFLICT DO NOTHING",
+      [INITIAL_TENANT],
+    );
+    const topic = await (
+      await asCodex("board/topics", "POST", {
+        title: "Feed topic",
+        body: "Indexed body.",
+      })
+    ).json();
+    await asCodex(`board/topics/${topic.topic.id}/replies`, "POST", {
+      body: "A reply.",
+    });
+    await asOwner("board/topics", "POST", {
+      title: "Private topic",
+      body: "Not for Codex.",
+      space: "private",
+    });
+    const remembered = await (
+      await asCodex("invoke", "POST", {
+        operation: "core.remember",
+        version: "1.0.0",
+        arguments: { body: "Feed memory.", session_key: "client:feed-1" },
+        idempotency_key: "feed-mem-1",
+      })
+    ).json();
+    expect(remembered.status).toBe("succeeded");
+    // Unsettled memories wait; settled ones appear.
+    const early = await (await asCodex(`changes?after=${start.cursor}`)).json();
+    expect(early.changes.map((c: { kind: string }) => c.kind)).toEqual([
+      "topic",
+      "reply",
+    ]);
+    // Memories are immutable; skip the trigger only to age them in the test.
+    await engine.exec(`SET session_replication_role = replica;
+      UPDATE ap_memories SET created_at=created_at - interval '1 minute';
+      SET session_replication_role = origin;`);
+    const feed = await (await asCodex(`changes?after=${start.cursor}`)).json();
+    const kinds = feed.changes.map(
+      (c: { kind: string; title?: string; body: string }) => [
+        c.kind,
+        c.title ?? c.body,
+      ],
+    );
+    expect(kinds).toEqual(
+      expect.arrayContaining([
+        ["topic", "Feed topic"],
+        ["reply", "Feed topic"],
+        ["memory", "Feed memory."],
+      ]),
+    );
+    expect(JSON.stringify(feed)).not.toContain("Not for Codex");
+    const reply = feed.changes.find(
+      (c: { kind: string }) => c.kind === "reply",
+    );
+    expect(reply).toMatchObject({
+      body: "A reply.",
+      thread_id: topic.topic.id,
+    });
+    const after = await (await asCodex(`changes?after=${feed.cursor}`)).json();
+    expect(after.changes).toEqual([]);
+    expect(after.cursor).toBe(feed.cursor);
+    // The owner sees every space; the same feed is a core operation.
+    const owner = await (await asOwner(`changes?after=${start.cursor}`)).json();
+    expect(JSON.stringify(owner)).toContain("Not for Codex");
+    const viaInvoke = await (
+      await asCodex("invoke", "POST", {
+        operation: "core.changes",
+        version: "1.0.0",
+        arguments: { after: start.cursor, limit: 1 },
+      })
+    ).json();
+    expect(viaInvoke.result.has_more).toBe(true);
+    expect(viaInvoke.result.changes.length).toBeLessThanOrEqual(2);
+    expect((await asCodex("changes?after=bogus")).status).toBe(400);
+  });
+});

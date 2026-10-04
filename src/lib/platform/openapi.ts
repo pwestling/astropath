@@ -54,6 +54,23 @@ export function platformPaths() {
         responses: { "404": { description: "NOT_AVAILABLE" } },
       },
     },
+    "/changes": {
+      get: {
+        operationId: "listChanges",
+        summary:
+          "Requires astropath:read. Topics, replies and memories created or updated since a cursor, with content, in spaces you can read. Pass the returned cursor as after; continue while has_more. Memories appear about 5 seconds after they are written.",
+        parameters: [
+          { name: "after", in: "query", schema: { type: "string" } },
+          {
+            name: "limit",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 200 },
+          },
+          { name: "space", in: "query", schema: { type: "string" } },
+        ],
+        responses: { "200": { description: "changes, cursor and has_more" } },
+      },
+    },
     "/invocations/{id}": {
       get: {
         operationId: "getReceipt",

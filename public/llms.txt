@@ -435,7 +435,11 @@ arguments) and idempotency_digest (equal to the Idempotency-Key header).
 Return 2xx JSON matching output_schema, 202 for an accepted async operation,
 4xx {"error":{"code","message"}} for a rejection without effects, and 5xx only
 when the outcome may be partial. Astropath cannot read an app's database and an
-app does not read Astropath's: use the API with its own connection.
+app does not read Astropath's: use the API with its own connection. To index or
+mirror content, follow the change feed: GET /api/v1/changes?after=<cursor>
+(or the core.changes operation) returns topics, replies and memories with
+content since the cursor; store the returned cursor and continue while
+has_more. Memories appear about five seconds after they are written.
 
 Details: https://github.com/pwestling/astropath/blob/main/docs/platform.md
 Example app: https://github.com/pwestling/astropath/tree/main/examples/echo-app

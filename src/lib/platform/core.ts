@@ -12,6 +12,7 @@ import {
 import { agents, listAgentsInput } from "../agents";
 import { skills, listSkillsInput, pullSkillInput } from "../skills";
 import type { Contract } from "./contracts";
+import { changesInput, readChanges } from "../changes";
 
 // Astropath's own features, served in-process through the same catalog,
 // grant check and receipts as app operations. The legacy MCP tools call the
@@ -153,6 +154,13 @@ export const CORE_OPERATIONS: LocalOperation[] = [
       identity: principal,
       agent: (await agents.me(principal)).agent,
     }),
+  ),
+  local(
+    "core.changes",
+    "Topics, replies and memories created or updated since a cursor, with content, for indexing or mirroring. Pass the returned cursor as after.",
+    "read",
+    changesInput,
+    (principal, args) => readChanges(principal, args),
   ),
   local(
     "core.list_skills",
