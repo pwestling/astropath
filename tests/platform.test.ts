@@ -333,12 +333,11 @@ describe("the tool platform", () => {
     ).json();
     expect(viaOperation.result.receipt_id).toBe(first.receipt_id);
 
-    const executed = await asCodex("execute", "POST", {
-      operations: [],
+    const unselected = await asCodex("execute", "POST", {
+      operations: [{ operation: "core.nothing", version: "1.0.0" }],
       code: "async () => 1",
     });
-    expect(executed.status).toBe(404);
-    expect((await executed.json()).error.code).toBe("NOT_AVAILABLE");
+    expect((await unselected.json()).error.code).toBe("NOT_AVAILABLE");
   });
 
   it("lets only the owner create apps and issues a publisher key once", async () => {
@@ -809,5 +808,194 @@ describe("the change feed", () => {
     expect(viaInvoke.result.has_more).toBe(true);
     expect(viaInvoke.result.changes.length).toBeLessThanOrEqual(2);
     expect((await asCodex("changes?after=bogus")).status).toBe(400);
+  });
+});
+
+describe("execute", () => {
+  const run = async (body: Record<string, unknown>, as = asCodex) => {
+    const response = await as("execute", "POST", body);
+    return { status: response.status, body: await response.json() };
+  };
+  const read = (
+    code: string,
+    operations = [{ operation: "core.recall", version: "1.0.0" }],
+  ) => run({ operations, code });
+
+  it("composes operations and returns a result with its call ledger", async () => {
+    const { body } = await run({
+      operations: [
+        { operation: "core.recall", version: "1.0.0" },
+        { operation: "echo.say", version: "1.0.0" },
+      ],
+      code: `async () => {
+        const said = await api.echo.say({ text: "composed" });
+        const found = await api.core.recall({ q: "Platform test" });
+        console.log("found", found.memories.length);
+        return { said: said.text, caller: said.caller, memories: found.memories.length };
+      }`,
+    });
+    expect(body).toMatchObject({
+      status: "succeeded",
+      result: { said: "composed", caller: "Codex", memories: 1 },
+      logs: ["found 1"],
+      effects: { has_committed_effects: false, has_unsettled_calls: false },
+    });
+    expect(body.calls.map((c: { operation: string }) => c.operation)).toEqual([
+      "echo.say",
+      "core.recall",
+    ]);
+    const fetched = await (
+      await asCodex(`executions/${body.execution_id}`)
+    ).json();
+    expect(fetched).toMatchObject({ status: "succeeded", replayed: true });
+    expect((await asClaude(`executions/${body.execution_id}`)).status).toBe(
+      404,
+    );
+  });
+
+  it("keeps read mode read-only and requires a key for writes", async () => {
+    const remember = [{ operation: "core.remember", version: "1.0.0" }];
+    expect((await read("async () => 1", remember)).body.error.message).toMatch(
+      /mode "write"/,
+    );
+    expect(
+      (
+        await run({
+          mode: "write",
+          operations: remember,
+          code: "async () => 1",
+        })
+      ).body.error.message,
+    ).toMatch(/execution_key/);
+  });
+
+  it("reports partial effects, never re-runs a keyed execution, and conflicts on change", async () => {
+    const program = {
+      mode: "write",
+      execution_key: "exec-partial-1",
+      operations: [{ operation: "core.remember", version: "1.0.0" }],
+      code: `async () => {
+        await api.core.remember({ body: "Written by a program.", session_key: "client:exec-1" }, { idempotency_key: "exec-mem-1" });
+        throw new Error("boom after the write");
+      }`,
+    };
+    const first = (await run(program)).body;
+    expect(first).toMatchObject({
+      status: "failed",
+      error: { code: "PROGRAM_ERROR", message: "Error: boom after the write" },
+      effects: { has_committed_effects: true },
+      calls: [
+        {
+          operation: "core.remember",
+          status: "succeeded",
+          effect_state: "committed",
+        },
+      ],
+    });
+    const again = (await run(program)).body;
+    expect(again).toMatchObject({
+      execution_id: first.execution_id,
+      replayed: true,
+      status: "failed",
+    });
+    const recalled = await (
+      await asCodex("invoke", "POST", {
+        operation: "core.recall",
+        version: "1.0.0",
+        arguments: { q: "Written by a program" },
+      })
+    ).json();
+    expect(recalled.result.memories).toHaveLength(1);
+    const changed = await run({
+      ...program,
+      code: program.code.replace("boom", "bang"),
+    });
+    expect(changed.status).toBe(409);
+    expect(changed.body.error.code).toBe("IDEMPOTENCY_CONFLICT");
+    // A write without its own idempotency key is rejected inside the program.
+    const unkeyed = (
+      await run({
+        ...program,
+        execution_key: "exec-unkeyed",
+        code: `async () => { try { await api.core.remember({ body: "x", session_key: "client:exec-1" }); } catch (e) { return [e.name, e.code]; } }`,
+      })
+    ).body;
+    expect(unkeyed.result).toEqual(["OperationError", "INVALID_ARGUMENTS"]);
+  });
+
+  it("holds its sandbox and budget boundaries", async () => {
+    const escape =
+      await read(`async () => [typeof process, typeof require, typeof fetch,
+      typeof setTimeout, typeof globalThis.call, Object.getPrototypeOf(api), Object.isFrozen(api.core)]`);
+    expect(escape.body.result).toEqual([
+      "undefined",
+      "undefined",
+      "undefined",
+      "undefined",
+      "undefined",
+      null,
+      true,
+    ]);
+    const cpu = await read("async () => { while (true) {} }");
+    expect(cpu.body).toMatchObject({
+      status: "timed_out",
+      error: { code: "EXECUTION_LIMIT", effect_state: "none" },
+    });
+    expect(cpu.body.error.message).toMatch(/CPU/);
+    const memory = await read(
+      `async () => { const a = []; for (;;) a.push(new Array(1e6).fill(1)); }`,
+    );
+    expect(memory.body.error.code).toBe("EXECUTION_LIMIT");
+    const big = await read(`async () => "x".repeat(70000)`);
+    expect(big.body.error.message).toMatch(/64 KiB/);
+    const syntax = await read("async () => {");
+    expect(syntax.body.error.code).toBe("INVALID_ARGUMENTS");
+    const notFunction = await read("42");
+    expect(notFunction.body.error.message).toMatch(/function expression/);
+    const many = await read(`async () => {
+      let failed = null;
+      for (let i = 0; i < 51; i++) {
+        try { await api.core.recall({ q: "x", limit: 1 }); } catch (e) { failed = [i, e.code]; }
+      }
+      return failed;
+    }`);
+    expect(many.body.result).toEqual([50, "EXECUTION_LIMIT"]);
+    expect(many.body.calls).toHaveLength(50);
+  }, 30000);
+
+  it("tracks calls the program did not await", async () => {
+    const { body } = await read(
+      `async () => { api.core.recall({ q: "x" }); return "early"; }`,
+    );
+    expect(body).toMatchObject({ status: "succeeded", result: "early" });
+    expect(body.calls).toHaveLength(1);
+    expect(body.calls[0].status).toBe("succeeded");
+  });
+
+  it("is available through the MCP execute tool", async () => {
+    const client = new Client({ name: "execute-test", version: "1.0.0" });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${ORIGIN}/mcp`), {
+        requestInit: {
+          headers: { Authorization: `Bearer ${tokens[0].token}` },
+        },
+        fetch: (input, init) => mcpPost(new Request(input, init)),
+      }),
+    );
+    try {
+      const result = await client.callTool({
+        name: "execute",
+        arguments: {
+          operations: [{ operation: "core.list_agents", version: "1.0.0" }],
+          code: "async () => (await api.core.list_agents({})).agents.length > 0",
+        },
+      });
+      expect(result.structuredContent).toMatchObject({
+        status: "succeeded",
+        result: true,
+      });
+    } finally {
+      await client.close();
+    }
   });
 });

@@ -93,10 +93,48 @@ CREATE TABLE IF NOT EXISTS ap_signing_keys (
   PRIMARY KEY (tenant_id, kid)
 );
 
+-- execute: one row per program run, and a ledger of every operation it
+-- dispatched. The program itself is never re-run; recovery uses receipts.
+CREATE TABLE IF NOT EXISTS ap_executions (
+  id uuid PRIMARY KEY,
+  tenant_id uuid NOT NULL DEFAULT current_setting('astropath.tenant_id')::uuid REFERENCES ap_tenants(id),
+  principal_id text NOT NULL,
+  principal_name text NOT NULL DEFAULT '',
+  space text NOT NULL,
+  mode text NOT NULL CHECK (mode IN ('read','write')),
+  execution_key text,
+  request_hash text NOT NULL,
+  code_hash text NOT NULL,
+  catalog_revision text NOT NULL,
+  status text NOT NULL CHECK (status IN ('running','succeeded','failed','timed_out','cancelled')),
+  encrypted_source text NOT NULL,
+  encrypted_result text,
+  encrypted_logs text,
+  error jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  finished_at timestamptz,
+  UNIQUE (tenant_id, principal_id, execution_key),
+  FOREIGN KEY (tenant_id, space) REFERENCES ap_spaces(tenant_id, slug)
+);
+CREATE TABLE IF NOT EXISTS ap_execution_calls (
+  execution_id uuid NOT NULL REFERENCES ap_executions(id),
+  seq integer NOT NULL,
+  tenant_id uuid NOT NULL DEFAULT current_setting('astropath.tenant_id')::uuid REFERENCES ap_tenants(id),
+  operation text NOT NULL,
+  version text NOT NULL,
+  receipt_id uuid,
+  status text NOT NULL,
+  effect_state text NOT NULL DEFAULT 'none',
+  error_code text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (execution_id, seq)
+);
+
 DO $$
 DECLARE tab text;
 BEGIN
- FOREACH tab IN ARRAY ARRAY['ap_apps','ap_app_releases','ap_catalogs','ap_app_grants','ap_invocations','ap_signing_keys'] LOOP
+ FOREACH tab IN ARRAY ARRAY['ap_apps','ap_app_releases','ap_catalogs','ap_app_grants','ap_invocations','ap_signing_keys','ap_executions','ap_execution_calls'] LOOP
   EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY',tab);
   EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY',tab);
   EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON %I',tab);

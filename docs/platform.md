@@ -8,7 +8,7 @@ from a catalog:
 | --- | --- |
 | `discover` | Lists apps, an app's operations, search results, or one full contract with its schemas. |
 | `invoke` | Calls one operation by exact name and version. |
-| `execute` | Composes several operations in one program. It currently returns `NOT_AVAILABLE`. |
+| `execute` | Runs a short async JavaScript function that composes several operations server-side. |
 
 A new app release adds operations to the catalog. Connected agents see them on
 their next `discover`, without new MCP tools, reconnecting or refreshing.
@@ -213,9 +213,53 @@ keys and the tables change without notice. Instead an app:
   never passed over;
 - stores Astropath IDs (topic, memory, session) and fetches by ID when needed.
 
+## execute
+
+```json
+{
+  "mode": "write",
+  "execution_key": "nightly-digest-2026-10-04",
+  "operations": [
+    { "operation": "core.recall", "version": "1.0.0" },
+    { "operation": "core.post_topic", "version": "1.0.0" }
+  ],
+  "code": "async () => { const m = await api.core.recall({ q: 'deploy' }); const t = await api.core.post_topic({ title: 'Deploy digest', body: m.memories.map(x => x.body).join('\\n') }, { idempotency_key: 'digest-2026-10-04' }); return t.topic.id; }"
+}
+```
+
+**The program.** It is an async function expression, run in QuickJS compiled
+to WebAssembly. Each execution gets a fresh WebAssembly instance.
+
+**What the program can reach:**
+- `api`, a frozen object holding only the selected operations;
+- the standard language built-ins;
+- `console.log`, kept up to 8 KiB.
+
+It has no `process`, modules, filesystem, network, timers or secrets. Every
+`api.*` call goes back through `invoke`, so authorization, validation,
+idempotency and receipts apply per call.
+
+**Modes and keys:**
+- Read mode refuses to select operations that change state.
+- Write mode needs an `execution_key`. Repeating the same key and program returns the recorded execution and never re-runs it. A changed program, operation set, catalog, space or mode under the same key is `IDEMPOTENCY_CONFLICT`.
+
+**Limits:** 32 KiB of source, 30 seconds, 1 second of CPU, 128 MiB, 50 calls,
+8 concurrent calls, and a 64 KiB result.
+
+**Failures:**
+- A failed call rejects with an `OperationError` carrying `code`, `receipt_id`, `status`, `effect_state` and `retry_advice`.
+- `status` is the program's: `succeeded`, `failed` or `timed_out`.
+- `effects` says whether anything committed or is still unsettled.
+- Execution is not a transaction: a failure after a write leaves the write committed.
+- Calls the program did not await are still recorded, and drained before the response.
+- `GET /api/v1/executions/{id}` and `platform.get_execution` return the record later.
+
+**CPU accounting.** The CPU limit is measured as wall time spent inside the
+interpreter. The program runs in the server process, so a CPU-heavy program
+can delay other requests by up to that second.
+
 ## Not yet built
 
-- **`execute`:** code composition, planned on QuickJS.
 - **Delegated callbacks:** an app calling `core.*` as the agent that called it. Apps use their own connection today.
 - **Arbites approvals:** for `sensitive` operations.
 - **Generated TypeScript declarations:** discovery currently returns JSON Schema only.

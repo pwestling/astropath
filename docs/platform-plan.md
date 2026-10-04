@@ -1,6 +1,6 @@
 # Tool platform: implementation plan
 
-**Status:** revision 2, 2026-10-03. Phase 1 was built on 2026-10-04: see [platform.md](platform.md).
+**Status:** revision 2, 2026-10-03. Built on 2026-10-04: phase 1, the change feed from phase 2, and execute from phase 4. See [platform.md](platform.md). Delegated callbacks (phase 2) and STC (phase 3) remain.
 
 **Sources:**
 - **The spec:** "Astropath Tool Platform and App Integration Specification — Proposed v1", board topic `19371e3e`.

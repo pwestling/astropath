@@ -2,7 +2,18 @@ import type { NextConfig } from "next";
 
 const config: NextConfig = {
   output: "standalone",
-  serverExternalPackages: ["pg"],
+  // QuickJS loads its WebAssembly file from its own package at runtime.
+  serverExternalPackages: [
+    "pg",
+    "quickjs-emscripten-core",
+    "@jitl/quickjs-wasmfile-release-sync",
+  ],
+  outputFileTracingIncludes: {
+    "/api/v1/[[...path]]": [
+      "./node_modules/@jitl/quickjs-wasmfile-release-sync/dist/*.wasm",
+    ],
+    "/mcp": ["./node_modules/@jitl/quickjs-wasmfile-release-sync/dist/*.wasm"],
+  },
   // Request URLs can contain search text or short-lived file capabilities.
   logging: { incomingRequests: false },
   async headers() {

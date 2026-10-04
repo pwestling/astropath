@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { discoverInput, executeInput, invokeInput } from "./dispatch";
+import { discoverInput, invokeInput } from "./dispatch";
+import { executeInput } from "./execute";
 
 // The tool platform over HTTP: the same three calls as the MCP tools.
 export function platformPaths() {
@@ -49,9 +50,19 @@ export function platformPaths() {
       post: {
         operationId: "executeProgram",
         summary:
-          "Run a short program composing discovered operations. Not yet enabled: returns NOT_AVAILABLE.",
+          "Requires astropath:read. Run a short async JavaScript function composing the listed operations, exposed as api.<app>.<name>(args, { idempotency_key }). mode write plus execution_key is required for operations that change state. Returns status, result, logs, the call ledger and an effects summary.",
         requestBody: body(executeInput),
-        responses: { "404": { description: "NOT_AVAILABLE" } },
+        responses: {
+          "200": {
+            description: "Execution: status, result, logs, calls, effects",
+          },
+          "404": {
+            description: "A selected operation is not available to you",
+          },
+          "409": {
+            description: "execution_key reused for a different program",
+          },
+        },
       },
     },
     "/changes": {
@@ -69,6 +80,25 @@ export function platformPaths() {
           { name: "space", in: "query", schema: { type: "string" } },
         ],
         responses: { "200": { description: "changes, cursor and has_more" } },
+      },
+    },
+    "/executions/{id}": {
+      get: {
+        operationId: "getExecution",
+        summary:
+          "An earlier execution's status, result, logs and call ledger, for its caller or the workspace owner.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          "200": { description: "Execution" },
+          "404": { description: "NOT_AVAILABLE" },
+        },
       },
     },
     "/invocations/{id}": {

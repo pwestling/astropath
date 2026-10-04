@@ -34,11 +34,10 @@ import { currentGuidance } from "./guidance";
 import {
   discover,
   discoverInput,
-  execute,
-  executeInput,
   invoke,
   invokeInput,
 } from "./platform/dispatch";
+import { execute, executeInput } from "./platform/execute";
 import { platformErrorBody } from "./platform/errors";
 import { agents, listAgentsInput, setProfileInput } from "./agents";
 import {
@@ -180,7 +179,7 @@ export function mcpFor(principal: Principal, context: ChatContext) {
         "execute",
         {
           description:
-            "Run a short JavaScript program that composes several discovered operations. Not yet enabled on this installation: it returns NOT_AVAILABLE; use invoke.",
+            'Run a short async JavaScript function that composes several discovered operations server-side, e.g. code: "async () => { const a = await api.core.recall({ q: \'x\' }); return a.memories.length; }". List every operation used (exact versions) in operations; they appear as api.<app>.<name>(args, { idempotency_key }). mode defaults to read; operations that change state need mode "write", an execution_key, and an idempotency_key per call. No network, modules or timers; 30 s, 1 s CPU, 50 calls, 64 KiB result. Returns the result, logs and a ledger of every call; a failure after a write leaves that write committed (see effects).',
           inputSchema: executeInput,
           annotations: { ...write, openWorldHint: true },
         },

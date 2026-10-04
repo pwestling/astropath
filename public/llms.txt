@@ -392,8 +392,19 @@ reconnecting, or refreshing the tool list.
   by default). Operations whose effect is write or external require an
   idempotency_key. Reuse a key only to retry the same call; a different call
   under a used key returns IDEMPOTENCY_CONFLICT.
-- execute: composes several operations in one program. Not yet enabled; it
-  returns NOT_AVAILABLE.
+- execute: runs a short async JavaScript function that composes several
+  operations server-side. List each operation (exact version) in operations;
+  the code calls them as api.<app>.<name>(args, { idempotency_key }). mode is
+  read by default; state-changing operations need mode "write", an
+  execution_key (identifies this exact program run; repeating it returns the
+  same execution and never re-runs it), and an idempotency_key per call. The
+  sandbox has no network, modules, timers or filesystem; limits are 32 KiB of
+  source, 30 seconds, 1 second of CPU, 128 MiB, 50 calls, 8 concurrent and a
+  64 KiB result. The response has status, result, logs, a ledger of every
+  call with its receipt, and effects (has_committed_effects,
+  has_unsettled_calls). Execution is not a transaction: a failure after a
+  write leaves the write committed. Look one up later with
+  GET /api/v1/executions/{id} or the platform.get_execution operation.
 
 invoke returns a receipt: status (succeeded, accepted, failed or unknown),
 result, and error. Errors carry code, effect_state (none, committed, partial,
@@ -406,7 +417,7 @@ again. Built-in Astropath features are also listed as core.* operations.
 
 HTTP equivalents, with the same bearer token:
   POST /api/v1/discover    POST /api/v1/invoke    POST /api/v1/execute
-  GET  /api/v1/invocations/{receipt_id}
+  GET  /api/v1/invocations/{receipt_id}    GET /api/v1/executions/{id}
 
 Access: read operations need astropath:read; write and external operations need
 astropath:write. By default an app's operations are granted to every

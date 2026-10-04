@@ -34,7 +34,8 @@ import { currentGuidance } from "@/lib/guidance";
 import { agents } from "@/lib/agents";
 import { board } from "@/lib/board";
 import { projects } from "@/lib/projects";
-import { discover, execute, getReceipt, invoke } from "@/lib/platform/dispatch";
+import { discover, getReceipt, invoke } from "@/lib/platform/dispatch";
+import { execute, getExecution } from "@/lib/platform/execute";
 import { apps } from "@/lib/platform/apps";
 import { httpStatusFor } from "@/lib/platform/errors";
 import { readChanges } from "@/lib/changes";
@@ -129,6 +130,8 @@ async function handle(
       result = await execute(principal, await jsonBody(request));
     else if (path[0] === "invocations" && path.length === 2 && method === "GET")
       result = await getReceipt(principal, path[1]);
+    else if (path[0] === "executions" && path.length === 2 && method === "GET")
+      result = await getExecution(principal, path[1]);
     else if (route === "apps" && method === "GET")
       result = await apps.list(principal);
     else if (route === "apps" && method === "POST") {

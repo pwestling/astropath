@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db, forPrincipal, type Database, type Queryable } from "../db";
-import { AppError } from "../errors";
 import { requireSpace, type Principal } from "../policy";
 import { appUrl } from "../config";
 import {
@@ -29,6 +28,8 @@ import {
   type PlatformErrorBody,
 } from "./errors";
 import { delegatedToken } from "./signing";
+// Registers platform.get_execution, so every entry point sees one catalog.
+import "./execute";
 
 export type ReceiptStatus =
   "succeeded" | "accepted" | "running" | "failed" | "unknown";
@@ -906,41 +907,3 @@ registerPlatformOperation({
     ui_url: null,
   },
 });
-
-// ----------------------------------------------------------------- execute
-
-export const executeInput = z
-  .object({
-    catalog_revision: revision.nullish(),
-    space: spaceSlug.nullish(),
-    mode: z.enum(["read", "write"]).nullish(),
-    execution_key: idempotencyKey.nullish(),
-    operations: z
-      .array(
-        z
-          .object({
-            operation: z.string().max(105),
-            version: z.string().max(64),
-          })
-          .strict(),
-      )
-      .max(50),
-    code: z.string().max(32768),
-  })
-  .strict();
-
-export async function execute(principal: Principal, raw: unknown) {
-  executeInput.parse(raw);
-  if (!principal.scopes.includes("astropath:read"))
-    throw new AppError(
-      403,
-      "insufficient_scope",
-      "This connection needs astropath:read.",
-    );
-  throw new PlatformError(
-    "NOT_AVAILABLE",
-    "Code execution is not enabled on this installation yet. Call operations one at a time with invoke.",
-    "none",
-    "do_not_retry",
-  );
-}
