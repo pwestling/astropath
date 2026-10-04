@@ -1,6 +1,6 @@
 # Tool platform: implementation plan
 
-**Status:** plan for review, 2026-10-03 (revision 2). Nothing here is built yet.
+**Status:** revision 2, 2026-10-03. Phase 1 was built on 2026-10-04: see [platform.md](platform.md).
 
 **Sources:**
 - **The spec:** "Astropath Tool Platform and App Integration Specification — Proposed v1", board topic `19371e3e`.

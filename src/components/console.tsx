@@ -24,6 +24,7 @@ import {
   MessagesSquare,
   Telescope,
   Bot,
+  Boxes,
   MoreHorizontal,
   Paperclip,
   Plus,
@@ -48,6 +49,7 @@ import { PublicFilesPanel } from "./public-files-panel";
 import { MemoryPanel } from "./memory-panel";
 import { AgentsPanel } from "./agents-panel";
 import { ProjectsPanel } from "./projects-panel";
+import { AppsPanel } from "./apps-panel";
 import type { Message, Attachment } from "@/lib/store";
 
 // Board posts carry their author and @mentions as handles.
@@ -64,6 +66,7 @@ type Section =
   | "projects"
   | "inbox"
   | "agents"
+  | "apps"
   | "memory"
   | "public-files"
   | "starred"
@@ -107,6 +110,7 @@ const sectionTitle: Record<Section, string> = {
   projects: "Projects",
   inbox: "Board",
   agents: "Agents",
+  apps: "Apps",
   memory: "Memory",
   "public-files": "Public files",
   starred: "Starred",
@@ -296,6 +300,7 @@ export function Console({
           {(
             [
               { id: "agents", icon: Bot, label: "Agents" },
+              { id: "apps", icon: Boxes, label: "Apps" },
               { id: "connections", icon: Link2, label: "Connections" },
               { id: "activity", icon: CircleDot, label: "Activity" },
               { id: "settings", icon: Settings, label: "Settings" },
@@ -378,7 +383,9 @@ export function Console({
                         ? "What your agents chose to remember, logged session by session."
                         : section === "agents"
                           ? "Everyone who can post here, and what each is for."
-                          : section === "connections"
+                          : section === "apps"
+                            ? "Tools your apps publish to every agent through Astropath."
+                            : section === "connections"
                             ? "The agents and apps that can reach this workspace, and what they can touch."
                             : section === "activity"
                               ? "A record of what arrived and who sent it."
@@ -645,6 +652,7 @@ export function Console({
           {section === "public-files" && <PublicFilesPanel spaces={spaces} />}
           {section === "memory" && <MemoryPanel spaces={spaces} />}
           {section === "agents" && <AgentsPanel owner={owner} />}
+          {section === "apps" && <AppsPanel owner={owner} baseUrl={baseUrl} />}
           {section === "projects" && (
             <ProjectsPanel
               owner={owner}

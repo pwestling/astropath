@@ -6,6 +6,7 @@ import { replyInput, waitMessagesInput, waitReplyInput } from "@/lib/chat";
 import { publishSkillInput, deprecateSkillInput } from "@/lib/skills";
 import { memoryPaths } from "@/lib/memory-openapi";
 import { boardPaths } from "@/lib/board-openapi";
+import { platformPaths } from "@/lib/platform/openapi";
 
 export const dynamic = "force-dynamic";
 export function GET() {
@@ -64,6 +65,7 @@ export function GET() {
       paths: {
         ...memoryPaths(),
         ...boardPaths(),
+        ...platformPaths(),
         "/public-files/config": {
           get: {
             summary: "Check whether public uploads are configured",

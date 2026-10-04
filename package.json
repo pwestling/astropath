@@ -27,6 +27,7 @@
     "@better-auth/oauth-provider": "1.7.4",
     "@modelcontextprotocol/server": "2.0.0",
     "@vercel/blob": "2.8.0",
+    "ajv": "8.20.0",
     "better-auth": "1.7.4",
     "jose": "6.2.12",
     "lucide-react": "1.45.0",

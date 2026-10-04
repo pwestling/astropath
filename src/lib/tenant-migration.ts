@@ -49,6 +49,9 @@ export async function migrateTenancy(tx: Queryable) {
   await tx.query(
     await readFile(new URL("./projects-schema.sql", import.meta.url), "utf8"),
   );
+  await tx.query(
+    await readFile(new URL("./platform-schema.sql", import.meta.url), "utf8"),
+  );
   const owner = (
     await tx.query<{ id: string; name: string; email: string }>(
       `SELECT id,name,email FROM "user" WHERE lower(email)=$1`,

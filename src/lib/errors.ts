@@ -5,6 +5,8 @@ export class AppError extends Error {
     public status: number,
     public code: string,
     message: string,
+    // Extra fields for the error body, such as a platform error's guidance.
+    public extra?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -12,7 +14,7 @@ export class AppError extends Error {
 export function errorResponse(error: unknown): Response {
   if (error instanceof AppError)
     return Response.json(
-      { error: { code: error.code, message: error.message } },
+      { error: { code: error.code, message: error.message, ...error.extra } },
       { status: error.status },
     );
   if (error instanceof ZodError)

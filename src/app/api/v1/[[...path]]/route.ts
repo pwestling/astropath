@@ -34,6 +34,9 @@ import { currentGuidance } from "@/lib/guidance";
 import { agents } from "@/lib/agents";
 import { board } from "@/lib/board";
 import { projects } from "@/lib/projects";
+import { discover, execute, getReceipt, invoke } from "@/lib/platform/dispatch";
+import { apps } from "@/lib/platform/apps";
+import { httpStatusFor } from "@/lib/platform/errors";
 import {
   createPublicUpload,
   listPublicFiles,
@@ -105,7 +108,43 @@ async function handle(
     else if (route === "public-files/uploads" && method === "POST") {
       result = await createPublicUpload(principal, await jsonBody(request));
       status = 201;
-    } else if (route === "projects" && method === "GET")
+    } else if (route === "discover" && method === "POST")
+      result = await discover(principal, await jsonBody(request));
+    else if (route === "invoke" && method === "POST") {
+      const receipt = await invoke(principal, await jsonBody(request));
+      result = receipt;
+      status =
+        receipt.status === "accepted"
+          ? 202
+          : receipt.error && receipt.status !== "succeeded"
+            ? httpStatusFor(receipt.error.code)
+            : 200;
+    } else if (route === "execute" && method === "POST")
+      result = await execute(principal, await jsonBody(request));
+    else if (path[0] === "invocations" && path.length === 2 && method === "GET")
+      result = await getReceipt(principal, path[1]);
+    else if (route === "apps" && method === "GET")
+      result = await apps.list(principal);
+    else if (route === "apps" && method === "POST") {
+      result = await apps.create(principal, await jsonBody(request));
+      status = 201;
+    } else if (path[0] === "apps" && path.length === 2 && method === "PATCH")
+      result = await apps.update(principal, path[1], await jsonBody(request));
+    else if (
+      path[0] === "apps" &&
+      path[2] === "publisher-key" &&
+      path.length === 3 &&
+      method === "POST"
+    )
+      result = await apps.rotateKey(principal, path[1]);
+    else if (
+      path[0] === "apps" &&
+      path[2] === "grants" &&
+      path.length === 3 &&
+      method === "POST"
+    )
+      result = await apps.setGrant(principal, path[1], await jsonBody(request));
+    else if (route === "projects" && method === "GET")
       result = await projects.list(principal);
     else if (route === "projects/overrides" && method === "POST")
       result = await projects.setOverride(principal, await jsonBody(request));
