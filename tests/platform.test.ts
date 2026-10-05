@@ -1007,6 +1007,7 @@ describe("a large app catalog", () => {
       name: `echo.imported_${String(n).padStart(4, "0")}`,
       version: "1.0.0",
       summary: `Imported tool ${n}.`,
+      group: n < 30 ? "alpha" : "beta",
       effect: "read",
       input_schema: {
         type: "object",
@@ -1016,13 +1017,13 @@ describe("a large app catalog", () => {
       output_schema: { type: "object" },
       route: { path: "/ops/say/v1" },
     }));
-    expect(
-      validateManifest(manifest("0.9.0", many), "echo").contracts,
-    ).toHaveLength(452);
+    const release = {
+      ...manifest("0.9.0", many),
+      groups: [{ id: "alpha", name: "Alpha", description: "The first few." }],
+    };
+    expect(validateManifest(release, "echo").contracts).toHaveLength(452);
     startEcho("0.9.0");
-    const published = await publish(publisherKey, {
-      manifest: manifest("0.9.0", many),
-    });
+    const published = await publish(publisherKey, { manifest: release });
     expect(published).toMatchObject({ status: 201, body: { operations: 452 } });
 
     // Discovery stays bounded: a page at a time, within one namespace.
@@ -1041,6 +1042,47 @@ describe("a large app catalog", () => {
     expect(
       apps.apps.find((a: { app: string }) => a.app === "echo").operations,
     ).toBe(452);
+
+    // Groups scope listing and search to one part of the app.
+    const echoApp = apps.apps.find((a: { app: string }) => a.app === "echo");
+    expect(echoApp.groups).toEqual([
+      {
+        namespace: "echo.alpha",
+        name: "Alpha",
+        description: "The first few.",
+        operations: 30,
+      },
+      {
+        namespace: "echo.beta",
+        name: "beta",
+        description: "",
+        operations: 420,
+      },
+    ]);
+    const names = async (body: object) =>
+      (
+        await (await asCodex("discover", "POST", { limit: 20, ...body })).json()
+      ).results.map((r: { operation: string }) => r.operation);
+    const alpha = await names({ namespace: "echo.alpha" });
+    expect(alpha).toHaveLength(20);
+    expect(alpha.every((name: string) => name < "echo.imported_0030")).toBe(
+      true,
+    );
+    expect(await names({ namespace: "echo.alpha", query: "tool 7" })).toContain(
+      "echo.imported_0007",
+    );
+    expect(
+      await names({ namespace: "echo.beta", query: "imported_0007" }),
+    ).not.toContain("echo.imported_0007");
+    expect(await names({ namespace: "echo.nothing" })).toEqual([]);
+    expect(await names({ namespace: "echo", query: "echo text" })).toContain(
+      "echo.say",
+    );
+    const outside = await asCodex("discover", "POST", {
+      namespace: "echo.beta",
+      operation: "echo.imported_0007",
+    });
+    expect((await outside.json()).error.code).toBe("INVALID_ARGUMENTS");
 
     // More than 200 can be disabled, and the reused catalog notices at once.
     const disabled = many.slice(0, 300).map((op) => op.name);

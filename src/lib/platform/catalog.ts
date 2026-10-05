@@ -25,6 +25,8 @@ export interface Entry {
   contract: Contract;
   contractHash: string;
   app: string;
+  // Discovery sub-namespace within the app, addressed as <app>.<group>.
+  group: string | null;
   release: string;
   binding: Binding;
 }
@@ -41,7 +43,14 @@ export interface Catalog {
   revision: string;
   entries: Entry[];
   byKey: Map<string, Entry>;
-  apps: Map<string, AppRow & { description: string; ui_url: string | null }>;
+  apps: Map<
+    string,
+    AppRow & {
+      description: string;
+      ui_url: string | null;
+      groups: Map<string, { name: string; description: string }>;
+    }
+  >;
 }
 
 // Platform operations are served by the dispatcher itself; they register
@@ -67,6 +76,7 @@ function builtIn(): Entry[] {
       contract: operation.contract,
       contractHash: hash,
       app: operation.contract.app,
+      group: null,
       release: "builtin",
       binding: { kind: "local", operation },
     };
@@ -98,7 +108,12 @@ export async function loadCatalog(tx: Queryable): Promise<Catalog> {
   const appInfo: Catalog["apps"] = new Map();
   for (const app of apps) {
     if (!app.active_release) {
-      appInfo.set(app.id, { ...app, description: "", ui_url: null });
+      appInfo.set(app.id, {
+        ...app,
+        description: "",
+        ui_url: null,
+        groups: new Map(),
+      });
       continue;
     }
     const cacheKey = `${tx.tenantId}:${app.id}@${app.active_release}`;
@@ -124,6 +139,12 @@ export async function loadCatalog(tx: Queryable): Promise<Catalog> {
       ...app,
       description: manifest.description,
       ui_url: manifest.ui?.url ?? null,
+      groups: new Map(
+        (manifest.groups ?? []).map((group) => [
+          group.id,
+          { name: group.name ?? group.id, description: group.description },
+        ]),
+      ),
     });
     // Disabling blocks an app or operation everywhere, immediately.
     if (app.disabled_at) continue;
@@ -136,6 +157,7 @@ export async function loadCatalog(tx: Queryable): Promise<Catalog> {
         contract,
         contractHash: contractHash(contract),
         app: app.id,
+        group: op.group ?? null,
         release: manifest.release,
         binding: {
           kind: "remote",

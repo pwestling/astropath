@@ -226,18 +226,40 @@ export async function discover(
     space: chooseSpace(principal, input.space ?? undefined),
   };
   if (!input.query && !input.namespace && !input.operation) {
-    const apps = new Map<string, { app: string; operations: number }>();
+    const apps = new Map<
+      string,
+      { app: string; operations: number; groups: Map<string, number> }
+    >();
     for (const entry of latest(visible)) {
-      const app = apps.get(entry.app) ?? { app: entry.app, operations: 0 };
+      const app = apps.get(entry.app) ?? {
+        app: entry.app,
+        operations: 0,
+        groups: new Map<string, number>(),
+      };
       app.operations++;
+      if (entry.group)
+        app.groups.set(entry.group, (app.groups.get(entry.group) ?? 0) + 1);
       apps.set(entry.app, app);
     }
     return {
       ...base,
-      apps: [...apps.values()].map((app) => {
+      apps: [...apps.values()].map(({ groups, ...app }) => {
         const info = catalog.apps.get(app.app);
         return {
           ...app,
+          // Pass a group's namespace to list or search only that group.
+          ...(groups.size
+            ? {
+                groups: [...groups.entries()]
+                  .sort()
+                  .map(([id, operations]) => ({
+                    namespace: `${app.app}.${id}`,
+                    name: info?.groups.get(id)?.name ?? id,
+                    description: info?.groups.get(id)?.description ?? "",
+                    operations,
+                  })),
+              }
+            : {}),
           name: info?.name ?? (app.app === "core" ? "Astropath" : app.app),
           description:
             info?.description ??
@@ -247,34 +269,38 @@ export async function discover(
           ui_url: info?.ui_url ?? null,
         };
       }),
-      hint: "Pass namespace to list an app's operations, query to search, or operation for one contract in full.",
+      hint: "Pass namespace to list an app's operations (or a group's, such as app.group, alone or with query), query to search, or operation for one contract in full.",
       results: [],
       next_cursor: null,
     };
   }
+  // A namespace is an app, or one group within it written app.group.
+  const [scopeApp, scopeGroup] = input.namespace?.split(".", 2) ?? [];
+  const inScope = (entry: Entry) =>
+    !scopeApp ||
+    (entry.app === scopeApp && (!scopeGroup || entry.group === scopeGroup));
   let candidates: Entry[];
   if (input.operation) {
-    const namespace = input.operation.split(".")[0];
-    if (input.namespace && input.namespace !== namespace)
-      throw new PlatformError(
-        "INVALID_ARGUMENTS",
-        "operation is outside the given namespace.",
-      );
     candidates = selectVersion(
       visible.filter((entry) => entry.contract.operation === input.operation),
       input.version,
     );
+    if (
+      input.namespace &&
+      (input.operation.split(".")[0] !== scopeApp ||
+        (candidates.length && !candidates.every(inScope)))
+    )
+      throw new PlatformError(
+        "INVALID_ARGUMENTS",
+        "operation is outside the given namespace.",
+      );
   } else {
     if (input.version)
       throw new PlatformError(
         "INVALID_ARGUMENTS",
         "version can only be given with operation.",
       );
-    candidates = latest(
-      input.namespace
-        ? visible.filter((entry) => entry.app === input.namespace)
-        : visible,
-    );
+    candidates = latest(visible.filter(inScope));
     if (input.query) {
       const scored = candidates
         .map((entry) => ({ entry, score: score(entry, input.query!) }))

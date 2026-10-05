@@ -387,6 +387,9 @@ reconnecting, or refreshing the tool list.
   searches; operation (optionally with version) returns one full contract,
   including input_schema and output_schema. Results include catalog_revision
   and exact versions.
+  A large app may divide its operations into groups: the app listing then
+  shows each group's namespace (app.group), which can be passed as namespace,
+  alone or with query, to list or search only that group.
 - invoke: call one operation with catalog_revision (optional), operation,
   exact version, arguments matching input_schema, and space (optional; general
   by default). Operations whose effect is write or external require an
