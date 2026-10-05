@@ -72,6 +72,8 @@ test -x "$node_store/bin/node"
 if [[ "$mode" != --activate* ]]; then
 # Build from locked inputs on Linux, with no production credentials in the build
 # environment. The host's build slice leaves headroom for PostgreSQL and SSH.
+# Two test workers at a time: four in-memory databases at once push the scope past
+# MemoryHigh, and the reclaim stall makes their setup hooks time out.
 systemd-run --scope --collect --quiet --slice=builds.slice \
   --property=MemoryHigh=3G --property=MemoryMax=4G \
   --property=MemorySwapMax=512M --property=TasksMax=4096 \
@@ -79,7 +81,7 @@ systemd-run --scope --collect --quiet --slice=builds.slice \
   --setenv="PATH=$node_store/bin:/run/current-system/sw/bin:/usr/bin:/bin" \
   --setenv="npm_config_cache=$stage/.npm-cache" \
   --setenv=NEXT_TELEMETRY_DISABLED=1 \
-  /run/current-system/sw/bin/bash -c 'npm ci --no-audit --no-fund && npm run typecheck && npm test && npm run build'
+  /run/current-system/sw/bin/bash -c 'npm ci --no-audit --no-fund && npm run typecheck && npm test -- --maxWorkers=2 && npm run build'
 
 install -d -m 0755 /srv/astropath /srv/astropath/releases
 mkdir -m 0750 "$target"
