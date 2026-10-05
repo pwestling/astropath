@@ -1104,3 +1104,146 @@ describe("a large app catalog", () => {
     expect(kept.results).toHaveLength(1);
   });
 });
+
+describe("app management by agents", () => {
+  const invoke = async (operation: string, args: object, key?: string) =>
+    (
+      await asCodex("invoke", "POST", {
+        operation,
+        version: "1.0.0",
+        arguments: args,
+        ...(key ? { idempotency_key: key } : {}),
+      })
+    ).json();
+
+  it("marks every state-changing operation sensitive, in its name and contract", async () => {
+    const listed = await (
+      await asCodex("discover", "POST", { namespace: "platform", limit: 20 })
+    ).json();
+    const admin = listed.results.filter((r: { operation: string }) =>
+      /app/.test(r.operation),
+    );
+    expect(admin.map((r: { operation: string }) => r.operation).sort()).toEqual(
+      [
+        "platform.list_apps",
+        "platform.sensitive_create_app",
+        "platform.sensitive_rotate_app_key",
+        "platform.sensitive_set_app_grant",
+        "platform.sensitive_update_app",
+      ],
+    );
+    for (const op of admin) {
+      const changes = op.effect !== "read";
+      expect(op.operation.includes(".sensitive_")).toBe(changes);
+      expect(op.sensitive).toBe(changes);
+      expect(op.summary.startsWith("Sensitive: ")).toBe(changes);
+    }
+    const contract = await (
+      await asCodex("discover", "POST", {
+        operation: "platform.sensitive_create_app",
+      })
+    ).json();
+    expect(contract.results[0].description).toMatch(
+      /workspace owner's explicit confirmation/,
+    );
+    expect(contract.results[0].input_schema.required).toEqual(
+      expect.arrayContaining(["id", "name", "origin"]),
+    );
+  });
+
+  it("lets an agent create, list, update, re-key and grant an app", async () => {
+    const created = await invoke(
+      "platform.sensitive_create_app",
+      { id: "agentmade", name: "Agent made", origin: "http://127.0.0.1:4999" },
+      "create-agentmade",
+    );
+    expect(created.status).toBe("succeeded");
+    expect(created.result.publisher_key).toMatch(/^apk_/);
+    expect(created.result.app).toMatchObject({
+      id: "agentmade",
+      origin: "http://127.0.0.1:4999",
+      grant_policy: "auto",
+    });
+    // A retry with the same key replays the receipt; it does not mint a second key.
+    const replay = await invoke(
+      "platform.sensitive_create_app",
+      { id: "agentmade", name: "Agent made", origin: "http://127.0.0.1:4999" },
+      "create-agentmade",
+    );
+    expect(replay.result.publisher_key).toBe(created.result.publisher_key);
+    const again = await invoke(
+      "platform.sensitive_create_app",
+      { id: "agentmade", name: "Again", origin: "http://127.0.0.1:4999" },
+      "create-agentmade-2",
+    );
+    expect(again.status).toBe("failed");
+    // The key it was given publishes for that namespace only.
+    expect(
+      (await publish(created.result.publisher_key, { manifest: manifest() }))
+        .status,
+    ).toBe(403);
+
+    const find = async () =>
+      (await invoke("platform.list_apps", {})).result.apps.find(
+        (a: { id: string }) => a.id === "agentmade",
+      );
+    expect(await find()).toMatchObject({ origin: "http://127.0.0.1:4999" });
+
+    const updated = await invoke(
+      "platform.sensitive_update_app",
+      { app: "agentmade", origin: "https://elsewhere.example", disabled: true },
+      "update-agentmade",
+    );
+    expect(updated.status).toBe("succeeded");
+    expect(await find()).toMatchObject({
+      origin: "https://elsewhere.example",
+    });
+    expect((await find()).disabled_at).toBeTruthy();
+
+    const rotated = await invoke(
+      "platform.sensitive_rotate_app_key",
+      { app: "agentmade" },
+      "rotate-agentmade",
+    );
+    expect(rotated.result.publisher_key).toMatch(/^apk_/);
+    expect(rotated.result.publisher_key).not.toBe(created.result.publisher_key);
+    expect(
+      (
+        await publish(
+          created.result.publisher_key,
+          { manifest: manifest() },
+          "agentmade",
+        )
+      ).status,
+    ).toBe(401);
+
+    const granted = await invoke(
+      "platform.sensitive_set_app_grant",
+      { app: "agentmade", connection_id: claude.id, mode: "include" },
+      "grant-agentmade",
+    );
+    expect(granted.status).toBe("succeeded");
+    expect((await find()).grants).toEqual([
+      expect.objectContaining({ connection_id: claude.id, mode: "include" }),
+    ]);
+  });
+
+  it("still needs write scope and an idempotency key, and leaves the HTTP routes to the owner", async () => {
+    const noKey = await asCodex("invoke", "POST", {
+      operation: "platform.sensitive_rotate_app_key",
+      version: "1.0.0",
+      arguments: { app: "agentmade" },
+    });
+    expect(noKey.status).toBeGreaterThanOrEqual(400);
+    expect(
+      (
+        await asCodex("apps", "POST", {
+          id: "viahttp",
+          name: "x",
+          origin: "http://127.0.0.1:4998",
+        })
+      ).status,
+    ).toBe(403);
+    expect((await asCodex("apps")).status).toBe(403);
+  });
+});
