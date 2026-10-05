@@ -47,7 +47,9 @@ export interface Catalog {
 // Platform operations are served by the dispatcher itself; they register
 // here so the catalog, grants and discovery treat them like any other.
 const platformOperations: LocalOperation[] = [];
+let builtInGeneration = 0;
 export function registerPlatformOperation(operation: LocalOperation) {
+  builtInGeneration++;
   const key = `${operation.contract.operation}@${operation.contract.version}`;
   const index = platformOperations.findIndex(
     (op) => `${op.contract.operation}@${op.contract.version}` === key,
@@ -74,6 +76,11 @@ function builtIn(): Entry[] {
 // Releases are immutable, so a parsed manifest can be cached forever.
 const manifests = new Map<string, AppManifest>();
 const knownRevisions = new Set<string>();
+// A catalog is a pure function of the app rows and the built-in set, so the
+// last one built for a tenant is reused until either changes. Building one
+// hashes every contract, which is too much to repeat on each request once an
+// app publishes thousands of operations. Callers must not mutate a catalog.
+const catalogs = new Map<string, { fingerprint: string; catalog: Catalog }>();
 
 export async function loadCatalog(tx: Queryable): Promise<Catalog> {
   const apps = (
@@ -81,6 +88,12 @@ export async function loadCatalog(tx: Queryable): Promise<Catalog> {
       "SELECT id,name,origin,grant_policy,active_release,disabled_at,disabled_operations FROM ap_apps ORDER BY id",
     )
   ).rows;
+  const fingerprint = `${builtInGeneration}:${JSON.stringify(apps)}`;
+  const tenant = tx.tenantId ?? "";
+  const cached = catalogs.get(tenant);
+  if (cached?.fingerprint === fingerprint) return cached.catalog;
+  // A release row that cannot be read leaves its app out; never cache that.
+  let complete = true;
   const entries = builtIn();
   const appInfo: Catalog["apps"] = new Map();
   for (const app of apps) {
@@ -97,7 +110,10 @@ export async function loadCatalog(tx: Queryable): Promise<Catalog> {
           [app.id, app.active_release],
         )
       ).rows[0];
-      if (!row) continue;
+      if (!row) {
+        complete = false;
+        continue;
+      }
       manifest =
         typeof row.manifest === "string"
           ? (JSON.parse(row.manifest) as AppManifest)
@@ -111,8 +127,9 @@ export async function loadCatalog(tx: Queryable): Promise<Catalog> {
     });
     // Disabling blocks an app or operation everywhere, immediately.
     if (app.disabled_at) continue;
+    const disabled = new Set(app.disabled_operations);
     for (const op of manifest.operations) {
-      if (app.disabled_operations.includes(op.name)) continue;
+      if (disabled.has(op.name)) continue;
       const contract = contractOf(app.id, op, manifest.ui?.url ?? null);
       entries.push({
         key: `${op.name}@${op.version}`,
@@ -150,12 +167,14 @@ export async function loadCatalog(tx: Queryable): Promise<Catalog> {
     );
     knownRevisions.add(known);
   }
-  return {
+  const catalog: Catalog = {
     revision,
     entries,
     byKey: new Map(entries.map((entry) => [entry.key, entry])),
     apps: appInfo,
   };
+  if (complete) catalogs.set(tenant, { fingerprint, catalog });
+  return catalog;
 }
 
 // Pinning a revision pins contracts, never authorization. An older revision

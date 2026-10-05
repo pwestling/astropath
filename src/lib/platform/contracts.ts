@@ -98,7 +98,7 @@ export const appManifest = z
       .object({ url: z.url({ protocol: /^https$/ }).max(500) })
       .strict()
       .optional(),
-    operations: z.array(operationManifest).max(200),
+    operations: z.array(operationManifest),
   })
   .strict();
 export type OperationManifest = z.infer<typeof operationManifest>;

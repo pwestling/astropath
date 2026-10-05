@@ -110,6 +110,7 @@ origin. It cannot redirect calls anywhere else or touch another namespace.
 **Limits:**
 - Schemas are JSON Schema 2020-12 and must be self-contained: local `#` references only, with no `$id` and no remote `$ref`.
 - Each operation's public contract is limited to 32 KiB.
+- A release may contain any number of operations; the publish request body is limited to 32 MiB.
 - Operation names are `<namespace>.<lowercase_name>`.
 - Versions are exact semver.
 - `core` and `platform` are reserved namespaces.

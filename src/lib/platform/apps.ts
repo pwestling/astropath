@@ -60,7 +60,7 @@ export const updateAppInput = z
     origin: origin.optional(),
     grant_policy: z.enum(["auto", "explicit"]).optional(),
     disabled: z.boolean().optional(),
-    disabled_operations: z.array(z.string().max(105)).max(200).optional(),
+    disabled_operations: z.array(z.string().max(105)).optional(),
   })
   .strict();
 export const setGrantInput = z

@@ -1000,3 +1000,65 @@ describe("execute", () => {
     }
   });
 });
+
+describe("a large app catalog", () => {
+  it("publishes, pages and disables far more than a couple of hundred operations", async () => {
+    const many = Array.from({ length: 450 }, (_, n) => ({
+      name: `echo.imported_${String(n).padStart(4, "0")}`,
+      version: "1.0.0",
+      summary: `Imported tool ${n}.`,
+      effect: "read",
+      input_schema: {
+        type: "object",
+        properties: { text: { type: "string" } },
+        additionalProperties: false,
+      },
+      output_schema: { type: "object" },
+      route: { path: "/ops/say/v1" },
+    }));
+    expect(
+      validateManifest(manifest("0.9.0", many), "echo").contracts,
+    ).toHaveLength(452);
+    startEcho("0.9.0");
+    const published = await publish(publisherKey, {
+      manifest: manifest("0.9.0", many),
+    });
+    expect(published).toMatchObject({ status: 201, body: { operations: 452 } });
+
+    // Discovery stays bounded: a page at a time, within one namespace.
+    const page = await (
+      await asCodex("discover", "POST", { namespace: "echo", limit: 20 })
+    ).json();
+    expect(page.results).toHaveLength(20);
+    expect(page.next_cursor).toBeTruthy();
+    expect(
+      page.results.every((r: { operation: string }) =>
+        r.operation.startsWith("echo."),
+      ),
+    ).toBe(true);
+    const apps = await (await asCodex("discover", "POST", {})).json();
+    expect(apps.catalog_revision).toBe(page.catalog_revision);
+    expect(
+      apps.apps.find((a: { app: string }) => a.app === "echo").operations,
+    ).toBe(452);
+
+    // More than 200 can be disabled, and the reused catalog notices at once.
+    const disabled = many.slice(0, 300).map((op) => op.name);
+    await asOwner("apps/echo", "PATCH", { disabled_operations: disabled });
+    const after = await (await asCodex("discover", "POST", {})).json();
+    expect(after.catalog_revision).not.toBe(page.catalog_revision);
+    expect(
+      after.apps.find((a: { app: string }) => a.app === "echo").operations,
+    ).toBe(152);
+    const gone = await asCodex("invoke", "POST", {
+      operation: disabled[0],
+      version: "1.0.0",
+      arguments: {},
+    });
+    expect((await gone.json()).error.code).toBe("NOT_AVAILABLE");
+    const kept = await (
+      await asCodex("discover", "POST", { operation: many[400].name })
+    ).json();
+    expect(kept.results).toHaveLength(1);
+  });
+});
