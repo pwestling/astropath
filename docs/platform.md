@@ -107,9 +107,12 @@ origin. It cannot redirect calls anywhere else or touch another namespace.
 - **`execution: "async"`:** the app answers 202 with a job handle that matches `output_schema`.
 - **`examples`:** they must validate against `input_schema`.
 
+- **`group`** (optional): files the operation under `<app>.<group>` for discovery, so an agent can list or search one part of a large app with `namespace: "<app>.<group>"`. The manifest's optional top-level `groups` (`[{ "id", "name", "description" }]`) names them in the app listing. A group is not part of the contract or the operation name, so regrouping never changes a version.
+
 **Limits:**
 - Schemas are JSON Schema 2020-12 and must be self-contained: local `#` references only, with no `$id` and no remote `$ref`.
 - Each operation's public contract is limited to 32 KiB.
+- A release may contain any number of operations; the publish request body is limited to 32 MiB.
 - Operation names are `<namespace>.<lowercase_name>`.
 - Versions are exact semver.
 - `core` and `platform` are reserved namespaces.

@@ -27,9 +27,11 @@ export async function POST(
       scopes: [],
       spaces: [],
     });
+    // A manifest carries every operation's schemas; an app that imports a
+    // large external catalog publishes thousands of them in one release.
     const result = await publishRelease(
       publisher,
-      await jsonBody(request, 1000000),
+      await jsonBody(request, 32 * 1024 * 1024),
     );
     return Response.json(result, {
       status: result.replayed ? 200 : 201,

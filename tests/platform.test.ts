@@ -1000,3 +1000,107 @@ describe("execute", () => {
     }
   });
 });
+
+describe("a large app catalog", () => {
+  it("publishes, pages and disables far more than a couple of hundred operations", async () => {
+    const many = Array.from({ length: 450 }, (_, n) => ({
+      name: `echo.imported_${String(n).padStart(4, "0")}`,
+      version: "1.0.0",
+      summary: `Imported tool ${n}.`,
+      group: n < 30 ? "alpha" : "beta",
+      effect: "read",
+      input_schema: {
+        type: "object",
+        properties: { text: { type: "string" } },
+        additionalProperties: false,
+      },
+      output_schema: { type: "object" },
+      route: { path: "/ops/say/v1" },
+    }));
+    const release = {
+      ...manifest("0.9.0", many),
+      groups: [{ id: "alpha", name: "Alpha", description: "The first few." }],
+    };
+    expect(validateManifest(release, "echo").contracts).toHaveLength(452);
+    startEcho("0.9.0");
+    const published = await publish(publisherKey, { manifest: release });
+    expect(published).toMatchObject({ status: 201, body: { operations: 452 } });
+
+    // Discovery stays bounded: a page at a time, within one namespace.
+    const page = await (
+      await asCodex("discover", "POST", { namespace: "echo", limit: 20 })
+    ).json();
+    expect(page.results).toHaveLength(20);
+    expect(page.next_cursor).toBeTruthy();
+    expect(
+      page.results.every((r: { operation: string }) =>
+        r.operation.startsWith("echo."),
+      ),
+    ).toBe(true);
+    const apps = await (await asCodex("discover", "POST", {})).json();
+    expect(apps.catalog_revision).toBe(page.catalog_revision);
+    expect(
+      apps.apps.find((a: { app: string }) => a.app === "echo").operations,
+    ).toBe(452);
+
+    // Groups scope listing and search to one part of the app.
+    const echoApp = apps.apps.find((a: { app: string }) => a.app === "echo");
+    expect(echoApp.groups).toEqual([
+      {
+        namespace: "echo.alpha",
+        name: "Alpha",
+        description: "The first few.",
+        operations: 30,
+      },
+      {
+        namespace: "echo.beta",
+        name: "beta",
+        description: "",
+        operations: 420,
+      },
+    ]);
+    const names = async (body: object) =>
+      (
+        await (await asCodex("discover", "POST", { limit: 20, ...body })).json()
+      ).results.map((r: { operation: string }) => r.operation);
+    const alpha = await names({ namespace: "echo.alpha" });
+    expect(alpha).toHaveLength(20);
+    expect(alpha.every((name: string) => name < "echo.imported_0030")).toBe(
+      true,
+    );
+    expect(await names({ namespace: "echo.alpha", query: "tool 7" })).toContain(
+      "echo.imported_0007",
+    );
+    expect(
+      await names({ namespace: "echo.beta", query: "imported_0007" }),
+    ).not.toContain("echo.imported_0007");
+    expect(await names({ namespace: "echo.nothing" })).toEqual([]);
+    expect(await names({ namespace: "echo", query: "echo text" })).toContain(
+      "echo.say",
+    );
+    const outside = await asCodex("discover", "POST", {
+      namespace: "echo.beta",
+      operation: "echo.imported_0007",
+    });
+    expect((await outside.json()).error.code).toBe("INVALID_ARGUMENTS");
+
+    // More than 200 can be disabled, and the reused catalog notices at once.
+    const disabled = many.slice(0, 300).map((op) => op.name);
+    await asOwner("apps/echo", "PATCH", { disabled_operations: disabled });
+    const after = await (await asCodex("discover", "POST", {})).json();
+    expect(after.catalog_revision).not.toBe(page.catalog_revision);
+    expect(
+      after.apps.find((a: { app: string }) => a.app === "echo").operations,
+    ).toBe(152);
+    const gone = await asCodex("invoke", "POST", {
+      operation: disabled[0],
+      version: "1.0.0",
+      arguments: {},
+    });
+    expect((await gone.json()).error.code).toBe("NOT_AVAILABLE");
+    const kept = await (
+      await asCodex("discover", "POST", { operation: many[400].name })
+    ).json();
+    expect(kept.results).toHaveLength(1);
+  });
+});

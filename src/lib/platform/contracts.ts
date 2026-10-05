@@ -83,6 +83,16 @@ export const operationManifest = z
     examples: z.array(z.record(z.string(), z.unknown())).max(5).default([]),
     timeout_ms: z.number().int().min(1000).max(30000).default(10000),
     route: z.object({ path: routePath }).strict(),
+    // Files the operation under <app>.<group> for discovery. It is not part
+    // of the contract: regrouping never changes an operation version.
+    group: ident(40).optional(),
+  })
+  .strict();
+const groupManifest = z
+  .object({
+    id: ident(40),
+    name: z.string().trim().min(1).max(100).optional(),
+    description: z.string().max(300).default(""),
   })
   .strict();
 export const appManifest = z
@@ -98,7 +108,9 @@ export const appManifest = z
       .object({ url: z.url({ protocol: /^https$/ }).max(500) })
       .strict()
       .optional(),
-    operations: z.array(operationManifest).max(200),
+    // Optional names and descriptions for the groups operations refer to.
+    groups: z.array(groupManifest).optional(),
+    operations: z.array(operationManifest),
   })
   .strict();
 export type OperationManifest = z.infer<typeof operationManifest>;
