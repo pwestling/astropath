@@ -2,7 +2,11 @@ import { z } from "zod";
 import type { Contract } from "./contracts";
 import { registerPlatformOperation } from "./catalog";
 import type { LocalOperation } from "./core";
-import { apps, createAppInput, setGrantInput, updateAppInput } from "./apps";
+import { createAppInput, setGrantInput, updateAppInput } from "./app-inputs";
+
+// The store imports the dispatcher, which imports this module, so it is
+// loaded when an operation runs rather than when this module is evaluated.
+const store = async () => (await import("./apps")).apps;
 
 // App management for agents. Every operation that changes something is named
 // platform.sensitive_* and carries sensitive: true, so the name is visible in
@@ -52,35 +56,37 @@ operation(
   "List apps with their origins, grant policies, grants and operations.",
   "read",
   z.object({}),
-  (principal) => apps.list(principal, "operation"),
+  async (principal) => (await store()).list(principal, "operation"),
 );
 operation(
   "sensitive_create_app",
   "register a new app and the origin Astropath sends its calls to. Returns the publisher key once.",
   "write",
   createAppInput,
-  (principal, args) => apps.create(principal, args, "operation"),
+  async (principal, args) =>
+    (await store()).create(principal, args, "operation"),
 );
 operation(
   "sensitive_update_app",
   "change an app's name, origin or grant policy, or disable it or some of its operations.",
   "write",
   app.extend(updateAppInput.shape),
-  (principal, { app: id, ...changes }) =>
-    apps.update(principal, String(id), changes, "operation"),
+  async (principal, { app: id, ...changes }) =>
+    (await store()).update(principal, String(id), changes, "operation"),
 );
 operation(
   "sensitive_rotate_app_key",
   "replace an app's publisher key; the old key stops working. Returns the new key once.",
   "write",
   app,
-  (principal, args) => apps.rotateKey(principal, String(args.app), "operation"),
+  async (principal, args) =>
+    (await store()).rotateKey(principal, String(args.app), "operation"),
 );
 operation(
   "sensitive_set_app_grant",
   "include a connection in an app (sensitive operations too), exclude it, or clear its grant.",
   "write",
   app.extend(setGrantInput.shape),
-  (principal, { app: id, ...grant }) =>
-    apps.setGrant(principal, String(id), grant, "operation"),
+  async (principal, { app: id, ...grant }) =>
+    (await store()).setGrant(principal, String(id), grant, "operation"),
 );
