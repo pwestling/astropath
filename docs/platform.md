@@ -51,6 +51,22 @@ recovery operation.
 A leaked publisher key can only publish tools that route to that app's fixed
 origin. It cannot redirect calls anywhere else or touch another namespace.
 
+### App management by agents
+
+A connection with `astropath:write` can do the same through operations:
+
+| Operation | What it does |
+| --- | --- |
+| `platform.list_apps` | Lists apps with their origins, grant policies, grants and operations. |
+| `platform.sensitive_create_app` | Registers an app and its origin (any origin). Returns the publisher key once. |
+| `platform.sensitive_update_app` | Changes an app's name, origin or grant policy, or disables it or some of its operations. |
+| `platform.sensitive_rotate_app_key` | Replaces the publisher key. Returns the new key once. |
+| `platform.sensitive_set_app_grant` | Includes a connection in an app, excludes it, or clears its grant. |
+
+Every operation that changes something has `sensitive` in its name and `sensitive: true` in its contract, and its description tells the caller to get the workspace owner's confirmation for that call. The name appears in the `invoke` call and in an `execute` call's operation list, so a client's approval policy can stop for a person. **Astropath itself asks nobody**: a client with no approval step runs these unprompted. The `/api/v1/apps` HTTP routes remain owner-only.
+
+A publisher key returned by these operations is also kept, encrypted, in the invocation's receipt, where its caller and the owner can read it again.
+
 ## Publishing a release (the app's deploy)
 
 1. **Deploy the new code.** Once deployed, `GET {origin}/.well-known/astropath-app` must return `{"app": "<namespace>", "release": "<release>"}`.

@@ -14,9 +14,13 @@ import { PlatformError } from "./errors";
 import { publicKeys } from "./signing";
 import "./dispatch";
 
-// Only the workspace owner, signed in, creates apps and sets where their
-// calls go. Agent connections never can.
-function requireOwner(principal: Principal) {
+// Who may manage apps and set where their calls go. The HTTP routes are for
+// the signed-in workspace owner. Agents reach the same store only through the
+// platform.sensitive_* operations (see admin.ts), whose names and contracts
+// mark them so a client can require a person's confirmation for each call.
+export type Authority = "owner" | "operation";
+function authorize(principal: Principal, authority: Authority) {
+  if (authority === "operation") return;
   if (!principal.owner || !principal.userId)
     throw new AppError(
       403,
@@ -79,8 +83,8 @@ const PUBLISHER_KEY = /^apk_[A-Za-z0-9_-]{43}$/;
 export class AppStore {
   constructor(private database: Database = db) {}
 
-  async list(principal: Principal) {
-    requireOwner(principal);
+  async list(principal: Principal, authority: Authority = "owner") {
+    authorize(principal, authority);
     const scoped = await forPrincipal(this.database, principal);
     return scoped.transaction(async (tx) => {
       const catalog = await loadCatalog(tx);
@@ -156,8 +160,12 @@ export class AppStore {
     });
   }
 
-  async create(principal: Principal, raw: unknown) {
-    requireOwner(principal);
+  async create(
+    principal: Principal,
+    raw: unknown,
+    authority: Authority = "owner",
+  ) {
+    authorize(principal, authority);
     const input = createAppInput.parse(raw);
     const key = mintPublisherKey();
     const scoped = await forPrincipal(this.database, principal);
@@ -191,8 +199,13 @@ export class AppStore {
     };
   }
 
-  async update(principal: Principal, id: string, raw: unknown) {
-    requireOwner(principal);
+  async update(
+    principal: Principal,
+    id: string,
+    raw: unknown,
+    authority: Authority = "owner",
+  ) {
+    authorize(principal, authority);
     const input = updateAppInput.parse(raw);
     const scoped = await forPrincipal(this.database, principal);
     const updated = await scoped.query<{ id: string }>(
@@ -211,11 +224,15 @@ export class AppStore {
     );
     if (!updated.rows.length)
       throw new AppError(404, "not_found", "App not found.");
-    return this.list(principal);
+    return this.list(principal, authority);
   }
 
-  async rotateKey(principal: Principal, id: string) {
-    requireOwner(principal);
+  async rotateKey(
+    principal: Principal,
+    id: string,
+    authority: Authority = "owner",
+  ) {
+    authorize(principal, authority);
     const key = mintPublisherKey();
     const scoped = await forPrincipal(this.database, principal);
     const updated = await scoped.query(
@@ -227,8 +244,13 @@ export class AppStore {
     return { publisher_key: key.key };
   }
 
-  async setGrant(principal: Principal, id: string, raw: unknown) {
-    requireOwner(principal);
+  async setGrant(
+    principal: Principal,
+    id: string,
+    raw: unknown,
+    authority: Authority = "owner",
+  ) {
+    authorize(principal, authority);
     const input = setGrantInput.parse(raw);
     const scoped = await forPrincipal(this.database, principal);
     await scoped.transaction(async (tx) => {
@@ -247,7 +269,7 @@ export class AppStore {
           [id, input.connection_id, input.mode, principal.id],
         );
     });
-    return this.list(principal);
+    return this.list(principal, authority);
   }
 }
 export const apps = new AppStore();

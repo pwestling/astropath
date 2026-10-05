@@ -30,6 +30,7 @@ import {
 import { delegatedToken } from "./signing";
 // Registers platform.get_execution, so every entry point sees one catalog.
 import "./execute";
+import "./admin";
 
 export type ReceiptStatus =
   "succeeded" | "accepted" | "running" | "failed" | "unknown";
