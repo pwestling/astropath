@@ -623,3 +623,8 @@ Detailed upgrade and recovery steps:
   bytes and declared size/type, returned headers, completion, and link expiry.
 - Decryption failure: restore the correct stable keys for this database; do not
   rotate keys or delete encrypted data as an installation shortcut.
+
+MCP request bounds: /mcp accepts at most 4 MiB per request and 10,000 combined
+array elements/object members per tool-call arguments object. Split larger
+batches. The 2 MiB inline upload tool still fits; use direct R2 uploads for larger
+files. These limits do not replace authentication, scopes, or tenant checks.

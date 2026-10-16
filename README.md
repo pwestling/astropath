@@ -177,3 +177,12 @@ For a fresh installation, follow the [deployment verification steps](docs/deploy
 Apps leave and retrieve durable content. Astropath does not start another app automatically. Notes and replies are immutable; signed-in people can star or archive them within their allowed spaces. File content is never executed. MIME types and names are descriptive, not proof of safe content. The UI previews only ordinary raster images and renders notes as text.
 
 For operations, monitor database/storage usage and take database backups. Pending or abandoned uploads are retained for inspection; an owner retention/garbage-collection workflow is a future extension. Set provider spending limits before increasing traffic.
+
+## MCP request limits
+
+The authenticated `/mcp` endpoint accepts request bodies up to 4 MiB and limits
+each tool call to 10,000 combined array elements and object members across its
+arguments. Split larger batches into smaller requests. These bounds apply before
+tool validation and execution; authentication and tenant checks still apply.
+Astropath's 2 MiB inline uploads fit this envelope; use the direct R2 upload
+flow for larger files. The separate upload routes keep their existing limits.
