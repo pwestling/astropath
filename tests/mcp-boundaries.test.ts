@@ -97,13 +97,13 @@ it("rejects excessive input elements before tool schema validation", async () =>
   expect(JSON.stringify(response)).toContain("maximum of 10000 elements");
 });
 
-it("keeps concurrent clients' responses and principals separate", async () => {
+it("keeps concurrent clients with the same JSON-RPC ID separate", async () => {
   const second = { ...principal, id: "second-client" };
   const results = await Promise.all([
     rpc(principal, 10, "get_identity", {}),
-    rpc(second, 11, "get_identity", {}),
+    rpc(second, 10, "get_identity", {}),
   ]);
-  expect(results.map((item) => item.id)).toEqual([10, 11]);
+  expect(results.map((item) => item.id)).toEqual([10, 10]);
   expect(JSON.parse(results[0].result.content[0].text).identity.id).toBe(
     principal.id,
   );
