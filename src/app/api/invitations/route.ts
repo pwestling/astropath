@@ -4,6 +4,7 @@ import { MemberStore } from "@/lib/members";
 import { getAuth } from "@/lib/auth";
 import { checkOrigin, rateLimit, hash } from "@/lib/security";
 import { AppError, errorResponse, jsonBody } from "@/lib/errors";
+import { custodesConfig, passwordLoginEnabled } from "@/lib/custodes/config";
 
 export const runtime = "nodejs";
 const members = new MemberStore(db);
@@ -38,10 +39,21 @@ export async function POST(request: Request) {
       ])
       .parse(await jsonBody(request, 8000));
     let result;
-    if (body.action === "inspect") result = await members.inspect(body.token);
-    else if (body.action === "accept")
+    if (body.action === "inspect")
+      result = {
+        ...(await members.inspect(body.token)),
+        custodes: !!custodesConfig(),
+        password_login: passwordLoginEnabled(),
+      };
+    else if (body.action === "accept") {
+      if (!passwordLoginEnabled())
+        throw new AppError(
+          403,
+          "password_login_disabled",
+          "Password sign-in is turned off. Accept this invitation with Custodes.",
+        );
       result = await members.accept(body.token, body.password);
-    else {
+    } else {
       const session = await getAuth().api.getSession({
         headers: request.headers,
       });

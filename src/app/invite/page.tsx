@@ -10,6 +10,8 @@ export default function Invitation() {
     email: string;
     tenant_name: string;
     existing_account: boolean;
+    custodes: boolean;
+    password_login: boolean;
     spaces: { name: string; slug: string }[];
   } | null>(null);
   const [error, setError] = useState("");
@@ -39,6 +41,27 @@ export default function Invitation() {
       })
       .catch((error) => setError(error.message));
   }, []);
+  async function acceptWithCustodes() {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/custodes/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invite: token }),
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error?.message || "Unable to reach Custodes.");
+      // The invitation stays in the URL fragment until Custodes sends the person back.
+      window.location.assign(result.location);
+    } catch (error) {
+      setError(
+        error instanceof Error ? error.message : "Unable to reach Custodes.",
+      );
+      setBusy(false);
+    }
+  }
   async function accept(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!invite) return;
@@ -128,7 +151,19 @@ export default function Invitation() {
             {error}
           </div>
         )}
-        {invite && !accepted && (
+        {invite && !accepted && invite.custodes && !signedInAsInvite && (
+          <div className="form-stack">
+            <button
+              type="button"
+              className={`button${invite.password_login ? "" : " primary"}`}
+              disabled={busy}
+              onClick={acceptWithCustodes}
+            >
+              Accept with Custodes
+            </button>
+          </div>
+        )}
+        {invite && !accepted && (invite.password_login || signedInAsInvite) && (
           <form className="form-stack" onSubmit={accept}>
             {invite.existing_account && (
               <p>

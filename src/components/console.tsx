@@ -44,6 +44,7 @@ import { Brand } from "./brand";
 import { api, bytes, relative } from "./api";
 import { authClient } from "@/lib/auth-client";
 import { MemberSettings } from "./member-settings";
+import { CustodesPanel } from "./custodes-panel";
 import { TenantSwitcher, PlatformTenants } from "./tenant-switcher";
 import { PublicFilesPanel } from "./public-files-panel";
 import { MemoryPanel } from "./memory-panel";
@@ -125,16 +126,21 @@ export function Console({
   owner,
   baseUrl,
   tenantId,
+  custodes,
+  passwordLogin,
 }: {
   ownerName: string;
   owner: boolean;
   baseUrl: string;
   tenantId?: string;
+  custodes: { configured: boolean; linkedAt: string | null; notice?: string };
+  passwordLogin: boolean;
 }) {
   const [section, setSection] = useState<Section>("projects");
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.has("session") || params.has("account")) setSection("memory");
+    if (params.has("custodes")) setSection("settings");
   }, []);
   const [mobileNav, setMobileNav] = useState(false);
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -386,14 +392,14 @@ export function Console({
                           : section === "apps"
                             ? "Tools your apps publish to every agent through Astropath."
                             : section === "connections"
-                            ? "The agents and apps that can reach this workspace, and what they can touch."
-                            : section === "activity"
-                              ? "A record of what arrived and who sent it."
-                              : section === "settings"
-                                ? "Spaces, members, and your account."
-                                : section === "starred"
-                                  ? "Topics worth keeping within reach."
-                                  : "Topics set aside."}
+                              ? "The agents and apps that can reach this workspace, and what they can touch."
+                              : section === "activity"
+                                ? "A record of what arrived and who sent it."
+                                : section === "settings"
+                                  ? "Spaces, members, and your account."
+                                  : section === "starred"
+                                    ? "Topics worth keeping within reach."
+                                    : "Topics set aside."}
               </p>
             </div>
             {listSection ? (
@@ -713,6 +719,8 @@ export function Console({
               spaces={spaces}
               onRefresh={refresh}
               onNotice={setNotice}
+              custodes={custodes}
+              passwordLogin={passwordLogin}
             />
           )}
         </div>
@@ -1682,11 +1690,15 @@ function SettingsPanel({
   spaces,
   onRefresh,
   onNotice,
+  custodes,
+  passwordLogin,
 }: {
   owner: boolean;
   spaces: Space[];
   onRefresh: () => void;
   onNotice: (message: string) => void;
+  custodes: { configured: boolean; linkedAt: string | null; notice?: string };
+  passwordLogin: boolean;
 }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1784,36 +1796,40 @@ function SettingsPanel({
       </section>
       {owner && <MemberSettings spaces={spaces} onNotice={onNotice} />}
       <PlatformTenants />
-      <section className="surface settings-card">
-        <h2>Your password</h2>
-        <p>
-          Use at least 12 characters. Changing it signs out your other sessions.
-        </p>
-        <form onSubmit={changePassword} className="form-stack">
-          <label>
-            Current password
-            <input
-              name="current"
-              type="password"
-              autoComplete="current-password"
-              required
-            />
-          </label>
-          <label>
-            New password
-            <input
-              name="new"
-              type="password"
-              autoComplete="new-password"
-              required
-              minLength={12}
-            />
-          </label>
-          <button className="button" disabled={busy}>
-            <KeyRound size={15} /> Update password
-          </button>
-        </form>
-      </section>
+      <CustodesPanel {...custodes} />
+      {passwordLogin && (
+        <section className="surface settings-card">
+          <h2>Your password</h2>
+          <p>
+            Use at least 12 characters. Changing it signs out your other
+            sessions.
+          </p>
+          <form onSubmit={changePassword} className="form-stack">
+            <label>
+              Current password
+              <input
+                name="current"
+                type="password"
+                autoComplete="current-password"
+                required
+              />
+            </label>
+            <label>
+              New password
+              <input
+                name="new"
+                type="password"
+                autoComplete="new-password"
+                required
+                minLength={12}
+              />
+            </label>
+            <button className="button" disabled={busy}>
+              <KeyRound size={15} /> Update password
+            </button>
+          </form>
+        </section>
+      )}
       <section className="surface settings-card">
         <h2>Sign out</h2>
         <p>Your connected apps will stay connected.</p>
