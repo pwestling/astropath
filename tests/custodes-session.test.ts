@@ -49,11 +49,14 @@ beforeEach(() => {
 it("creates a normal Better Auth session cookie for a known user and records the sid", async () => {
   const instance = auth();
   const ctx = await instance.$context;
-  const user = await ctx.internalAdapter.createUser({
-    email: "a@example.test",
-    name: "A",
-    emailVerified: true,
-  });
+  const user = await ctx.internalAdapter.createUser(
+    {
+      email: "a@example.test",
+      name: "A",
+      emailVerified: true,
+    },
+    { method: "email" } as never,
+  );
   const response = await instance.api.createCustodesSession({
     body: {
       userId: user.id,
@@ -89,11 +92,14 @@ it("refuses unknown users, honours the access hook, and is not reachable over HT
       body: { userId: "nobody", issuer: "i", subject: "s", sid: null },
     }),
   ).rejects.toThrow();
-  const user = await ctx.internalAdapter.createUser({
-    email: "b@example.test",
-    name: "B",
-    emailVerified: true,
-  });
+  const user = await ctx.internalAdapter.createUser(
+    {
+      email: "b@example.test",
+      name: "B",
+      emailVerified: true,
+    },
+    { method: "email" } as never,
+  );
   denied = true;
   await expect(
     instance.api.createCustodesSession({
@@ -123,11 +129,14 @@ it("refuses unknown users, honours the access hook, and is not reachable over HT
 it("rotates the previous session when linking", async () => {
   const instance = auth();
   const ctx = await instance.$context;
-  const user = await ctx.internalAdapter.createUser({
-    email: "c@example.test",
-    name: "C",
-    emailVerified: true,
-  });
+  const user = await ctx.internalAdapter.createUser(
+    {
+      email: "c@example.test",
+      name: "C",
+      emailVerified: true,
+    },
+    { method: "email" } as never,
+  );
   const old = await ctx.internalAdapter.createSession(user.id, false);
   await instance.api.createCustodesSession({
     body: {
