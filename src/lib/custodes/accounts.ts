@@ -276,7 +276,8 @@ export class CustodesAccounts {
         this.members.acceptExistingIn(tx, inviteHash, id),
       );
     }
-    if (!(await userPrincipal(this.database, userId)))
+    // Sign-in requires an active membership in an enabled tenant; a bare account has no access.
+    if (!(await userPrincipal(this.database, userId))?.tenantId)
       throw refuse("custodes_no_access", REFUSALS.custodes_no_access);
     await this.database.query(
       "UPDATE ap_custodes_identities SET last_login_at=now() WHERE issuer=$1 AND subject=$2",
