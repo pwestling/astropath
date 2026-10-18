@@ -7,6 +7,7 @@ import { pool, systemDb as db } from "./db";
 import { appUrl, SCOPES } from "./config";
 import { oauthIdentityOptions } from "./oauth-identities";
 import { userPrincipal } from "./access";
+import { custodesSession } from "./custodes/session-plugin";
 import { APIError } from "better-auth/api";
 
 export function createAuth(bootstrap = false) {
@@ -41,6 +42,7 @@ export function createAuth(bootstrap = false) {
     },
     plugins: [
       jwt(),
+      custodesSession(() => db),
       mcp({
         ...oauthIdentityOptions,
         loginPage: "/login",

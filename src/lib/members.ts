@@ -140,6 +140,19 @@ export class MemberStore {
     return { invite_url: invite.invite_url };
   }
   private async pending(tx: Queryable, token: string, lock = false) {
+    return this.pendingByHash(
+      tx,
+      hash(
+        z
+          .string()
+          .regex(/^[A-Za-z0-9_-]{43}$/)
+          .parse(token),
+      ),
+      lock,
+    );
+  }
+  /** Looks up a usable invitation by the stored hash of its token. */
+  async pendingByHash(tx: Queryable, inviteHash: string, lock = false) {
     const result = await tx.query<{
       id: string;
       name: string;
@@ -150,14 +163,7 @@ export class MemberStore {
       `SELECT id,name,email,spaces,tenant_id FROM ap_members
       WHERE invite_hash=$1 AND invite_expires_at>now() AND user_id IS NULL AND disabled_at IS NULL
       AND EXISTS(SELECT 1 FROM ap_tenants t WHERE t.id=tenant_id AND t.disabled_at IS NULL)${lock ? " FOR UPDATE" : ""}`,
-      [
-        hash(
-          z
-            .string()
-            .regex(/^[A-Za-z0-9_-]{43}$/)
-            .parse(token),
-        ),
-      ],
+      [inviteHash],
     );
     if (!result.rows.length)
       throw new AppError(
@@ -189,26 +195,41 @@ export class MemberStore {
     };
   }
   async acceptExisting(token: string, userId: string) {
-    return this.database.transaction(async (tx) => {
-      const member = await this.pending(tx, token, true);
-      // The caller supplies a server-authenticated session ID. Read the current
-      // account email under a lock so an email change cannot race acceptance.
-      const user = await tx.query<{ email: string }>(
-        'SELECT email FROM "user" WHERE id=$1 FOR UPDATE',
-        [userId],
+    return this.database.transaction((tx) =>
+      this.acceptExistingIn(
+        tx,
+        hash(
+          z
+            .string()
+            .regex(/^[A-Za-z0-9_-]{43}$/)
+            .parse(token),
+        ),
+        userId,
+      ),
+    );
+  }
+  /**
+   * Attaches an existing, server-authenticated local account to the invitation addressed to
+   * its email. Callers prove the account (a session, or a Custodes link) before calling.
+   */
+  async acceptExistingIn(tx: Queryable, inviteHash: string, userId: string) {
+    const member = await this.pendingByHash(tx, inviteHash, true);
+    // Read the current account email under a lock so an email change cannot race acceptance.
+    const user = await tx.query<{ email: string }>(
+      'SELECT email FROM "user" WHERE id=$1 FOR UPDATE',
+      [userId],
+    );
+    if (!user.rows[0] || user.rows[0].email.toLowerCase() !== member.email)
+      throw new AppError(
+        403,
+        "invitation_account_mismatch",
+        "Sign in with the email address this invitation was sent to.",
       );
-      if (!user.rows[0] || user.rows[0].email.toLowerCase() !== member.email)
-        throw new AppError(
-          403,
-          "invitation_account_mismatch",
-          "Sign in with the email address this invitation was sent to.",
-        );
-      await tx.query(
-        "UPDATE ap_members SET user_id=$2,invite_hash=NULL,invite_expires_at=NULL WHERE id=$1",
-        [member.id, userId],
-      );
-      return { email: member.email, tenant_id: member.tenant_id };
-    });
+    await tx.query(
+      "UPDATE ap_members SET user_id=$2,invite_hash=NULL,invite_expires_at=NULL WHERE id=$1",
+      [member.id, userId],
+    );
+    return { email: member.email, tenant_id: member.tenant_id };
   }
   async accept(token: string, password: string) {
     z.string().min(12).max(128).parse(password);
