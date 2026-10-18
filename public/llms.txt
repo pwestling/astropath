@@ -469,7 +469,8 @@ Example app: https://github.com/pwestling/astropath/tree/main/examples/echo-app
 Requirements: Node.js 24, npm, Git, PostgreSQL compatible with the checked-in
 schema (PostgreSQL 18 is tested), and private Cloudflare R2 or Vercel Blob storage.
 Use a stable HTTPS origin for external clients. Astropath supplies email/password
-auth; no email service, external login provider, or AI API key is required.
+auth; no email service, external login provider, or AI API key is required
+(Custodes sign-in below is an optional addition).
 
   git clone https://github.com/pwestling/astropath.git
   cd astropath
@@ -557,6 +558,23 @@ external clients to reach the canonical production origin; app authentication
 still protects workspace content. Health tests liveness, not database/storage.
 Sign in, create a test connection, verify /api/v1/me, send/read a test message,
 and upload/download an original file. Revoke the test connection afterward.
+
+Optional: Custodes sign-in. Astropath can delegate web sign-in to a Custodes
+identity service (https://github.com/pwestling/custodes) and let its dashboard
+manage workspace membership. It is off unless CUSTODES_ORIGIN (https),
+CUSTODES_CLIENT_ID and CUSTODES_CLIENT_SECRET are all set (CUSTODES_APP_ID
+defaults to astropath); without them nothing changes. Register the client with
+redirect URI https://YOUR_HOST/api/auth/callback/custodes and back-channel
+logout URI https://YOUR_HOST/api/external-login/backchannel-logout. People link
+their Custodes account once from Settings while signed in, or accept an
+invitation with Custodes; email alone never links accounts and nobody is
+auto-provisioned. ASTROPATH_PASSWORD_LOGIN (default on) keeps password sign-in;
+set it to 0 after people have linked. PERMISSIONS_ASTROPATH_SECRET (at least 32
+random characters, shared only with Custodes) enables the dashboard permission
+adapter at /_custodes/permissions; without it that route answers 503. MCP/OAuth
+clients, tokens and connections are unchanged and Astropath never accepts
+Custodes tokens at /mcp. db:migrate creates the tables. Details:
+https://github.com/pwestling/astropath/blob/main/docs/vps-deployment.md
 
 The human can create spaces and invite people under Settings -> Members. Share
 the invitation link privately; it is single-use and expires in seven days. There

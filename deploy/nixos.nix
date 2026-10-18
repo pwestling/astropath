@@ -1,5 +1,14 @@
 # NixOS module for Astropath. This file is the source of truth; the vps infra flake
 # imports this repo as an input via nixosModules.default.
+#
+# Secret keys expected in astropath/environment (SOPS; ciphertext lives in the infra repo):
+#   CUSTODES_CLIENT_ID, CUSTODES_CLIENT_SECRET, CUSTODES_APP_ID  first-party Custodes client
+#       (admin API POST /api/manage/apps/astropath/client); without the id and secret
+#       Custodes sign-in is off. CUSTODES_ORIGIN is set below.
+#   PERMISSIONS_ASTROPATH_SECRET  dashboard permission adapter; also set in custodes'
+#       environment. Without it /_custodes/permissions answers 503.
+# Optional switch (default on): ASTROPATH_PASSWORD_LOGIN; set to 0 in the same file to end
+# password sign-in once people have linked Custodes.
 { config, pkgs, craftworldSecrets, ... }:
 
 {
@@ -36,6 +45,7 @@
       PORT = "4310";
       NEXT_TELEMETRY_DISABLED = "1";
       HOME = "/var/lib/astropath";
+      CUSTODES_ORIGIN = "https://auth.porterwestling.com";
       # Projects overview: cogitator's (formerly aigateway) ChatGPT-plan key on loopback. Not a
       # secret; each workspace owner must still opt in before content is sent.
       ASTROPATH_AI_BASE_URL = "http://127.0.0.1:4340/chatgpt/v1";

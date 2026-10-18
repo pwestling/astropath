@@ -66,6 +66,31 @@ For a **new** installation, follow the database migration and owner initializati
 
 For an **existing Astropath** installation, retain `APP_URL`, `BETTER_AUTH_SECRET`, `ASTROPATH_MASTER_KEY`, `OWNER_EMAIL` and the same database. Do not run owner initialization again. For a **Deaddrop upgrade**, follow the [upgrade guide](astropath-upgrade.md) and complete both `db:migrate` and `files:encrypt` before serving traffic. Human accounts remain usable, but the rename revokes old app connections and requires reconnecting them.
 
+## Optional: Custodes sign-in
+
+Skip this unless you run a [Custodes](https://github.com/pwestling/custodes) identity service. With none of the settings below, Astropath signs in with its own email/password exactly as before.
+
+Settings (runtime environment, never committed):
+
+| Variable | Purpose |
+| --- | --- |
+| `CUSTODES_ORIGIN` | Custodes origin, `https://auth.example.com` (no path) |
+| `CUSTODES_CLIENT_ID`, `CUSTODES_CLIENT_SECRET` | first-party client registered for this app |
+| `CUSTODES_APP_ID` | application id in Custodes (default `astropath`) |
+| `PERMISSIONS_ASTROPATH_SECRET` | at least 32 random characters, shared only with Custodes, for the dashboard permission adapter |
+| `ASTROPATH_PASSWORD_LOGIN` | default on; `0` refuses password sign-in and password invitations |
+
+Register the application in Custodes with resource `https://YOUR_HOST/mcp`, authorization `app-owned-v1`, and a `management` entry of `url = https://YOUR_HOST/_custodes/permissions` with `secretEnv = PERMISSIONS_ASTROPATH_SECRET`; register its first-party client with redirect URI `https://YOUR_HOST/api/auth/callback/custodes` and back-channel logout URI `https://YOUR_HOST/api/external-login/backchannel-logout`. Put the same permissions secret in Custodes' environment. `deploy/custodes-client.nix` is the NixOS form of this registration.
+
+Rollout, in order:
+
+1. Generate `PERMISSIONS_ASTROPATH_SECRET` (for example `openssl rand -base64 48`) into both Astropath's and Custodes' environments, with the client id and secret in Astropath's.
+2. Apply the schema, then deploy. The new tables are created by the usual `npm run db:migrate` (it runs `src/lib/custodes-schema.sql` inside the tenancy migration), which needs the same privileged database role as every earlier migration: it owns the tables, can create the `astropath_tenant` role membership and can create a `SECURITY DEFINER` function. It is additive and safe to repeat, and the previous release keeps working against the migrated schema. Then deploy Custodes (no-op if unchanged) and Astropath.
+3. Each person links once: sign in with the existing password, open **Settings**, choose **Link Custodes account**. New people join through an ordinary invitation and choose **Accept with Custodes**.
+4. Check the Custodes dashboard lists workspace access for Astropath, then set `ASTROPATH_PASSWORD_LOGIN=0` and restart. Existing sessions continue until they expire (seven days at most); back-channel logout ends Custodes-created sessions sooner.
+
+Rollback: set `ASTROPATH_PASSWORD_LOGIN` back to `1`; mappings and data are preserved. Removing the `CUSTODES_*` settings turns every Custodes feature off again. MCP clients are unaffected throughout: Astropath keeps issuing its own tokens, and a person signing in with Custodes meets the same consent page. Back-channel delivery is best-effort, so the seven-day session lifetime is the backstop.
+
 ## Installations that predate the rename
 
 Earlier versions of `deploy.sh` installed into `/app/deaddrop` with a `deaddrop` user, systemd unit and nginx file, and used `/opt/deaddrop-node`. The current script uses `astropath` names and would create a second, separate installation beside the old one. Before redeploying such a host, stop and disable `deaddrop`, move `/app/deaddrop` to `/app/astropath` (the `current` and `previous` symlinks are absolute, so repoint them), create the `astropath` system user, `chown -R root:astropath` the releases, point `/opt/astropath-node` at the same Node installation, and remove the old unit and nginx file after the new service is healthy. Keep `shared/app.env` unchanged.

@@ -154,6 +154,18 @@ is needed. Private attachments keep using the existing encrypted upload path.
 
 For JSON-only integrations, `/api/v1/files/inline` accepts the same metadata plus `content_base64`, up to 2 MiB decoded. Uploads support up to 100 MiB through the app server, subject to hosting/proxy request-body limits. Always send the returned upload headers and exact original bytes. Never expose storage credentials to clients. Transfer upload URLs expire after 15 minutes; read URLs expire after five minutes. Transfers recheck current connection, tenant, and space access.
 
+## Optional: sign in with Custodes
+
+Astropath can delegate **web sign-in** to a [Custodes](https://github.com/pwestling/custodes) identity service and let Custodes' dashboard manage workspace membership. Everything here is off unless configured; with no `CUSTODES_*` settings the app behaves exactly as before. Astropath's own OAuth/MCP provider, its tokens, named connections and the `/mcp` resource are unchanged and never accept Custodes tokens.
+
+- **Sign-in.** OIDC authorization-code flow with PKCE, state and nonce; the ID token is checked for signature (EdDSA, discovered JWKS), issuer, audience, expiry and nonce, then Astropath issues its normal Better Auth session. Requires `CUSTODES_ORIGIN` (https), `CUSTODES_CLIENT_ID`, `CUSTODES_CLIENT_SECRET`; `CUSTODES_APP_ID` defaults to `astropath`. Register the client with callback `https://YOUR_HOST/api/auth/callback/custodes` and back-channel logout URL `https://YOUR_HOST/api/external-login/backchannel-logout`.
+- **Linking.** `ap_custodes_identities` maps the durable `(issuer, sub)` to an existing local user id (unique on `(issuer, sub)` and on `(issuer, user_id)`, with audit fields). Email never links accounts. An unmapped Custodes sign-in is refused unless it (a) was started with **Link Custodes account** in Settings by the browser holding that user's valid session (server-stored, single-use state; the session is rotated), or (b) accepts an invitation addressed to its *verified* email, which creates a passwordless local user. Nobody is auto-provisioned. Sign-in also requires an active membership.
+- **Staged cutover.** `ASTROPATH_PASSWORD_LOGIN` (default on) keeps email/password sign-in and password invitations. Link first, then set it to `0` to refuse `/api/auth/sign-in/email` and password joins; existing sessions keep working until they expire.
+- **Back-channel logout.** `POST /api/external-login/backchannel-logout` verifies the signed `logout+jwt` (single-use `jti`) and ends the web sessions created from that Custodes session. MCP/OAuth tokens and connections are not revoked.
+- **Permissions.** `/_custodes/permissions` implements the Custodes permission protocol v1 (signed single-use management tokens, durable request receipts, one global version bumped by database triggers). It manages the real model: per-workspace membership, role (owner/member) and member spaces, and pending invitations; a workspace's last owner cannot be removed or demoted. Subjects are Custodes user ids resolved through the link table; unlinked people have no access. Enforcement stays in `access.ts`/`policy.ts`, so removing a member also stops that person's agent connections. Requires `PERMISSIONS_ASTROPATH_SECRET` (at least 32 random characters, shared only with Custodes); without it the adapter answers 503 and the app logs a warning.
+
+The schema is created by the normal `npm run db:migrate` (`src/lib/custodes-schema.sql`, additive and idempotent). See [the VPS guide](docs/vps-deployment.md#optional-custodes-sign-in) for rollout.
+
 ## Verification
 
 ```sh
