@@ -32,6 +32,12 @@ if [[ -n "$status" ]]; then
 fi
 test -s "$known_hosts"
 revision="$(git -C "$repo_dir" rev-parse HEAD)"
+infra_repo="${VPS_INFRA_REPO:-/Users/pwestling/dev/personal/vps}"
+# Host (NixOS module) changes ship first; this is a no-op unless flake.nix,
+# flake.lock or deploy/ changed since the commit the infra repo pins.
+if [[ "$mode" != --activate* ]]; then
+  "$infra_repo/scripts/deploy-app.sh" astropath "$repo_dir"
+fi
 release="${2:-$(date -u +%Y%m%dT%H%M%SZ)-${revision:0:7}}"
 stage="/var/tmp/astropath-build-$release"
 

@@ -6,6 +6,15 @@ See [its deployment record](vps-01-migration.md) and use
 `scripts/deploy-vps-01.sh` for that instance. The guide below is the
 general-purpose path for a conventional Linux server using `deploy.sh`.
 
+The NixOS module for `vps-01` (service, PostgreSQL, backups, Custodes client)
+lives in `deploy/` and is exported by the root `flake.nix` as
+`nixosModules.default`; it is the source of truth and the infra flake imports
+this repo as an input. Host-config changes deploy through
+`scripts/deploy-vps-01.sh`, which calls the infra repo's
+`scripts/deploy-app.sh astropath` before uploading the release. The sops
+ciphertext (`astropath.yaml`) stays in the infra repo and is passed to the
+module as `craftworldSecrets`.
+
 Astropath supports multiple tenants with separate encryption keys and space-restricted members. It can run on a Linux VPS with Node.js 24, nginx, systemd, Postgres and a private Cloudflare R2 bucket. Vercel hosting is not required; Vercel Blob remains an optional storage backend.
 
 ## Prerequisites
