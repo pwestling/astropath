@@ -269,7 +269,13 @@ export class CustodesAccounts {
           identity.subject,
         );
         if (existing === userId) return; // idempotent re-link of the same pair
-        await this.insertMapping(tx, identity, userId, "session", current.sessionId);
+        await this.insertMapping(
+          tx,
+          identity,
+          userId,
+          "session",
+          current.sessionId,
+        );
         linked = true;
       });
       return { userId, identity, linked, joined: false };
@@ -342,7 +348,11 @@ export class CustodesAccounts {
         [userId, invite.name, invite.email.toLowerCase()],
       );
       await this.insertMapping(tx, identity, userId, "invitation", null);
-      const joined = await this.members.acceptExistingIn(tx, inviteHash, userId);
+      const joined = await this.members.acceptExistingIn(
+        tx,
+        inviteHash,
+        userId,
+      );
       return { userId, joined };
     });
   }

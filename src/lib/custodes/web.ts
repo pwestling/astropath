@@ -73,7 +73,10 @@ function redirect(
  */
 async function resumeUrl(response: Response, appOrigin: string) {
   if (!response.ok) return null;
-  const body = (await response.clone().json().catch(() => null)) as {
+  const body = (await response
+    .clone()
+    .json()
+    .catch(() => null)) as {
     url?: unknown;
   } | null;
   if (typeof body?.url !== "string") return null;

@@ -54,8 +54,6 @@ export async function handleBackchannelLogout(
   );
   if (!first.rows.length) throw bad("The logout token was already used.");
   if (Math.random() < 0.05)
-    await database.query(
-      "DELETE FROM ap_custodes_jti WHERE expires_at<now()",
-    );
+    await database.query("DELETE FROM ap_custodes_jti WHERE expires_at<now()");
   return accounts.endSessions(config.issuer, { sid, subject });
 }

@@ -27,9 +27,15 @@ export function permissionsSecret(env: Env = process.env) {
     "ASTROPATH_MASTER_KEY",
   ])
     if (env[other]?.trim() === secret)
-      return { secret: null, reason: `${SECRET_NAME} must differ from ${other}` };
+      return {
+        secret: null,
+        reason: `${SECRET_NAME} must differ from ${other}`,
+      };
   if (!custodesOrigin(env))
-    return { secret: null, reason: "CUSTODES_ORIGIN is not set to an https origin" };
+    return {
+      secret: null,
+      reason: "CUSTODES_ORIGIN is not set to an https origin",
+    };
   return { secret, reason: "" };
 }
 
@@ -49,7 +55,11 @@ export function permissionHandler(env: Env = process.env) {
         appId: custodesAppId(env),
         secret,
       },
-      new AstropathPermissions(systemDb, custodesIssuer(env)!, custodesAppId(env)),
+      new AstropathPermissions(
+        systemDb,
+        custodesIssuer(env)!,
+        custodesAppId(env),
+      ),
       PERMISSIONS_PATH,
     );
   else if (!state.astropathPermissionsWarned) {

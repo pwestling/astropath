@@ -23,7 +23,8 @@ export async function GET(request: Request) {
       new URL(request.url).searchParams.get("oauth_query") ?? undefined;
     const { location, cookie } = await beginFlow(deps, {
       purpose: "login",
-      oauthQuery: oauthQuery && oauthQuery.length <= 4096 ? oauthQuery : undefined,
+      oauthQuery:
+        oauthQuery && oauthQuery.length <= 4096 ? oauthQuery : undefined,
     });
     return new Response(null, {
       status: 303,
